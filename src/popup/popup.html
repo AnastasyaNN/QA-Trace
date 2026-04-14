@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QA Trace</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<!-- Main Popup View -->
+<div id="mainView" class="container">
+    <header>
+        <div class="header-title-row">
+            <h1 data-i18n-key="extName">QA Trace</h1>
+        </div>
+        <div class="status-indicators">
+            <div class="status-item">
+                <span id="extVersion" class="ext-version" aria-hidden="true"></span>
+            </div>
+        </div>
+    </header>
+
+    <div class="stats">
+        <div class="stat-card stat-card-user-actions">
+            <h3 data-i18n-key="popup_user_actions">User Actions</h3>
+            <span id="userActionsCount">0</span>
+        </div>
+        <div class="stat-card stat-card-errors">
+            <h3 data-i18n-key="popup_errors">Errors</h3>
+            <span id="errorsCount">0</span>
+        </div>
+    </div>
+
+    <div class="recent-actions">
+        <h3 data-i18n-key="popup_recent_actions">Recent Actions</h3>
+        <div id="actionsList" class="actions-list"></div>
+    </div>
+
+    <div class="recent-errors">
+        <h3 data-i18n-key="popup_recent_errors">Recent Errors</h3>
+        <div id="errorsList" class="errors-list"></div>
+    </div>
+
+    <div id="latestResponseSection" class="latest-response-section" style="display: none;">
+        <h3 data-i18n-key="popup_latest_response">Latest LLM Response</h3>
+        <div class="latest-response-field">
+            <label data-i18n-key="popup_response_summary">Summary</label>
+            <div class="input-with-button">
+                <input id="latestResponseSummary" class="input-field" type="text" readonly>
+                <button id="copyLatestSummary" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+            </div>
+        </div>
+        <div class="latest-response-field">
+            <label data-i18n-key="popup_response_description">Description</label>
+            <div class="input-with-button">
+                <textarea id="latestResponseDescription" class="input-field" rows="6" readonly></textarea>
+                <button id="copyLatestDescription" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <button id="getPrompt" class="btn btn-primary" data-i18n-key="popup_get_prompt">Get Prompt</button>
+        <button id="configure" class="btn btn-configure" data-i18n-key="popup_configuration">Configuration</button>
+        <button id="clearData" class="btn btn-danger" data-i18n-key="popup_clear_data">Clear Data</button>
+    </div>
+</div>
+
+<!-- Configure Request to LLM View -->
+<div id="configureView" class="container" style="display: none;">
+    <div class="header">
+        <h1 data-i18n-key="popup_config_title">Prompt Configuration</h1>
+        <p data-i18n-key="popup_config_subtitle">Configure how to generate LLM prompts from tracked data</p>
+    </div>
+
+    <div class="info-box">
+        <strong data-i18n-key="popup_storage_status_label">📊 Current Storage Status:</strong>
+        <span id="storageStatus" data-i18n-key="popup_loading">Loading...</span>
+    </div>
+
+    <div class="config-section">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+            </svg>
+            <span data-i18n-key="popup_report_mode">Mode</span>
+        </div>
+
+        <div class="radio-group">
+            <div class="radio-option" data-mode="steps">
+                <input type="radio" name="mode" id="modeSteps" class="radio-input">
+                <div class="radio-content">
+                <div class="radio-title" data-i18n-key="popup_mode_steps_title">Steps to Reproduce for Ticket</div>
+                <div class="radio-description" data-i18n-key="popup_mode_steps_desc">
+                    Generate concise step-by-step instructions for reproducing issues.
+                    Creates LLM prompt focused on key actions and errors for bug reports.
+                </div>
+                </div>
+            </div>
+
+            <div class="radio-option" data-mode="document">
+                <input type="radio" name="mode" id="modeDocument" class="radio-input">
+                <div class="radio-content">
+                <div class="radio-title" data-i18n-key="popup_mode_document_title">Document steps</div>
+                <div class="radio-description" data-i18n-key="popup_mode_document_desc">
+                    Generate step documentation from tracked actions only (no errors in the prompt).
+                </div>
+                </div>
+            </div>
+
+            <div class="radio-option" data-mode="full">
+                <input type="radio" name="mode" id="modeFull" class="radio-input">
+                <div class="radio-content">
+                <div class="radio-title" data-i18n-key="popup_mode_full_title">Full Report of Actions</div>
+                <div class="radio-description" data-i18n-key="popup_mode_full_desc">
+                    Generate a comprehensive prompt with all tracked actions and errors.
+                    Creates detailed LLM prompt with complete user interaction timelines.
+                </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="config-section" id="dataScopeSection">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            <span data-i18n-key="popup_data_scope">Data Scope</span>
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" id="includeAllTabs" class="checkbox-input">
+            <label for="includeAllTabs" class="checkbox-label">
+                <span data-i18n-key="popup_include_all_tabs">Include actions from all tabs</span>
+                <span class="badge" id="tabsCountBadge">0 tabs</span>
+            </label>
+        </div>
+
+        <div id="tabScopeContainer" class="tab-scope-container">
+            <div id="tabScopeList" class="tab-scope-list"></div>
+            <div id="tabScopeEmpty" class="input-note" style="display: none;" data-i18n-key="popup_no_tracked_tabs">
+                No tracked tabs available.
+            </div>
+        </div>
+
+        <div class="input-note">
+            <span data-i18n-key="popup_tab_scope_hint">Select specific tracked tabs to include. Closed tabs will be noted.
+            Selecting "Include actions from all tabs" hides individual tab choices.</span>
+        </div>
+    </div>
+
+    <div class="config-section" id="stepsConfigSection" style="display: none;">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span data-i18n-key="popup_steps_config">Steps Configuration</span>
+        </div>
+
+        <div class="input-group">
+            <label for="actionsCount" class="input-label">
+                <span data-i18n-key="popup_actions_count_label">Number of Actions to Include</span>
+                <span class="badge" id="availableActionsBadge">0 available</span>
+            </label>
+            <input
+                    type="number"
+                    id="actionsCount"
+                    class="input-field"
+                    min="1"
+                    step="1"
+                    value="50"
+            >
+            <div style="margin-top: 5px;">
+                <span class="input-note" id="selectedCount">50 actions</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="config-section" id="fullConfigSection" style="display: none;">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span data-i18n-key="popup_time_window_label">Time window (minutes)</span>
+        </div>
+
+        <div class="input-group">
+            <label for="timeWindowMinutes" class="input-label">
+                <span data-i18n-key="popup_time_window_label">Time window (minutes)</span>
+            </label>
+            <input
+                    type="number"
+                    id="timeWindowMinutes"
+                    class="input-field"
+                    step="15"
+                    value="90"
+            >
+            <div style="margin-top: 5px;">
+                <span class="input-note" data-i18n-key="popup_time_window_hint">Use actions and errors from the last N minutes.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="config-section" id="expectedErrorsSection">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="10,2 10,8 16,8"></polyline>
+            </svg>
+            <span data-i18n-key="popup_expected_errors">Expected Errors</span>
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" id="allErrorsExpected" class="checkbox-input">
+            <label for="allErrorsExpected" class="checkbox-label">
+                <span data-i18n-key="popup_all_errors_expected">All errors are expected</span>
+            </label>
+        </div>
+
+        <div class="input-note">
+            <span data-i18n-key="popup_expected_errors_hint">Mark specific errors as expected to exclude them from the generated prompt.</span>
+        </div>
+
+        <div id="filteredErrorsContainer" class="expected-errors-list">
+            <div class="empty-state" data-i18n-key="popup_no_errors_filtered">No errors for current filters.</div>
+        </div>
+    </div>
+
+    <div class="config-section" id="unexpectedBehaviorSection">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 10h-3l-2-3-4 8-2-5-3 5H3"></path>
+            </svg>
+            <span data-i18n-key="popup_unexpected_behavior_title">Unexpected Behavior (Optional)</span>
+        </div>
+
+        <div class="input-group">
+            <textarea
+                    id="userErrorDescription"
+                    class="input-field"
+                    rows="4"
+                    data-i18n-key="popup_unexpected_behavior_placeholder"
+                    data-i18n-attr="placeholder"
+                    placeholder="Describe what went wrong even if no errors were captured..."
+            ></textarea>
+        </div>
+    </div>
+
+    <div class="preview-section">
+        <div class="preview-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <span data-i18n-key="popup_preview_configuration">Preview Configuration</span>
+        </div>
+        <div class="preview-content" id="configPreview">
+            <span data-i18n-key="popup_preview_placeholder">Mode: Steps to Reproduce
+            Actions to include: 10
+            Data scope: Current tab only
+            Estimated report size: 1.2 KB</span>
+        </div>
+    </div>
+
+    <div id="configurationError" class="error" style="display: none;"></div>
+    <div id="configureViewActions" class="actions">
+        <button id="backToMain" class="btn btn-secondary" data-i18n-key="popup_back">Back</button>
+        <button id="generateBtn" class="btn btn-primary" data-i18n-key="popup_generate_prompt">Generate Prompt</button>
+    </div>
+</div>
+
+<!-- Prompt Confirmation View -->
+<div id="promptConfirmationView" class="container" style="display: none;">
+    <div class="header">
+        <h1 data-i18n-key="popup_prompt_confirm_title">Prompt Confirmation</h1>
+        <p data-i18n-key="popup_prompt_confirm_subtitle">Review and modify the generated prompt before sending to LLM</p>
+    </div>
+
+    <div class="prompt-section">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14,2 14,8 20,8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10,9 9,9 8,9"></polyline>
+            </svg>
+            <span data-i18n-key="popup_generated_prompt">Generated Prompt</span>
+        </div>
+        <div class="prompt-content">
+            <textarea id="promptTextarea" class="prompt-textarea" data-i18n-key="popup_prompt_placeholder" data-i18n-attr="placeholder" placeholder="Generated prompt will appear here..."></textarea>
+            <div class="inline-actions">
+                <button id="copyPrompt" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy_prompt">Copy Prompt</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="response-section" id="responseSection" style="display: none;">
+        <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span data-i18n-key="popup_llm_response">LLM Response</span>
+        </div>
+        <div class="response-content">
+            <div id="responseFields">
+                <div class="response-field">
+                    <label for="responseSummary" class="input-label" data-i18n-key="popup_response_summary">Summary</label>
+                    <div class="input-with-button">
+                        <input id="responseSummary" class="input-field" type="text" readonly>
+                        <button id="copyResponseSummary" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+                    </div>
+                </div>
+                <div class="response-field">
+                    <label for="responseDescription" class="input-label" data-i18n-key="popup_response_description">Description</label>
+                    <div class="input-with-button">
+                        <textarea id="responseDescription" class="input-field" rows="8" readonly></textarea>
+                        <button id="copyResponseDescription" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+                    </div>
+                </div>
+            </div>
+            <div id="responseSuccess" class="response-text success" style="display: none;"></div>
+            <div id="responseError" class="response-text error" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <button id="backToConfigure" class="btn btn-secondary" data-i18n-key="popup_back_to_configure">Back to Configure</button>
+        <button id="triggerWebhook" class="btn btn-primary" disabled data-i18n-key="popup_trigger_webhook">Trigger Webhook</button>
+        <button id="sendToLLM" class="btn btn-primary" disabled data-i18n-key="popup_send_to_llm">Send to LLM</button>
+    </div>
+</div>
+
+<div id="passphraseModal" class="modal-overlay" role="dialog" aria-modal="true" style="display: none;">
+    <div class="modal-dialog">
+        <p id="passphraseModalPurpose" class="modal-purpose"></p>
+        <input type="password" id="passphraseModalInput" class="input-field modal-pass-input" autocomplete="off" spellcheck="false">
+        <div class="modal-actions">
+            <button type="button" id="passphraseModalCancel" class="btn btn-secondary" data-i18n-key="popup_passphrase_cancel">Cancel</button>
+            <button type="button" id="passphraseModalOk" class="btn btn-primary" data-i18n-key="popup_passphrase_ok">OK</button>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="/src/popup/popup.js"></script>
+</body>
+</html>

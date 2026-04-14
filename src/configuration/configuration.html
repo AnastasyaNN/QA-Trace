@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - QA Trace</title>
+    <link rel="stylesheet" href="configuration.css">
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1 data-i18n-key="configuration_title">Configuration</h1>
+    </header>
+
+    <div class="configuration-content">
+        <h2 data-i18n-key="configuration_allowed_URLs_title">Allowed URLs</h2>
+
+        <div class="form-group">
+            <div id="urls-container">
+                <div class="url-item">
+                    <input class="input url-input"
+                           type="url" placeholder="https://example.com">
+                    <button type="button"
+                            data-i18n-key="config_remove"
+                            class="btn btn-secondary btn-remove">
+                        Remove
+                    </button>
+                </div>
+            </div>
+            <button type="button" id="addUrl"
+                    data-i18n-key="config_add_another_URL"
+                    class="btn btn-secondary">
+                Add Another URL
+            </button>
+        </div>
+
+        <h2 data-i18n-key="config_error_monitoring_title">Error Monitoring Settings</h2>
+
+        <div class="form-group">
+            <div class="checkbox-group">
+                <div class="checkbox-item">
+                    <input class="checkbox-input" type="checkbox"
+                           id="monitorNetwork" checked>
+                    <label class="checkbox-label"
+                           for="monitorNetwork" data-i18n-key="config_monitor_network">Network Errors</label>
+                </div>
+                <div class="checkbox-item">
+                    <input class="checkbox-input" type="checkbox"
+                           id="monitorConsole" checked>
+                    <label class="checkbox-label"
+                           for="monitorConsole" data-i18n-key="config_monitor_console">Console Errors</label>
+                </div>
+                <div class="checkbox-item">
+                    <input class="checkbox-input" type="checkbox"
+                           id="monitorUI" checked>
+                    <label class="checkbox-label"
+                           for="monitorUI" data-i18n-key="config_monitor_ui">UI Errors</label>
+                </div>
+            </div>
+        </div>
+
+        <div id="uiErrorsSection">
+            <h2 data-i18n-key="config_ui_error_selectors_title">UI Error Selectors</h2>
+            <div class="form-group">
+                <div id="ui-errors-container">
+                    <div class="url-item">
+                        <input class="input ui-error-input"
+                               type="text" placeholder='div[id^="__error"]'>
+                        <button type="button"
+                                class="btn btn-secondary btn-remove" data-i18n-key="config_remove">
+                            Remove
+                        </button>
+                    </div>
+                </div>
+                <button type="button" id="addUiError"
+                        class="btn btn-secondary" data-i18n-key="config_add_selector">
+                    Add Another Selector
+                </button>
+            </div>
+        </div>
+
+        <h2 data-i18n-key="config_language_title">Language for LLM responses</h2>
+
+        <div class="form-group">
+            <label class="label"
+                   for="languageSelect" data-i18n-key="config_output_language">Output Language</label>
+            <select class="input"
+                    id="languageSelect">
+                <option value="auto" data-i18n-key="config_language_auto">Use browser language (default)</option>
+                <option value="en">English</option>
+                <option value="ru">Русский</option>
+            </select>
+        </div>
+
+        <h2 data-i18n-key="config_integrations_title">Integrations</h2>
+
+        <div class="form-group checkbox-group" id="integrationOptions">
+            <label class="checkbox-item">
+                <input class="checkbox-input" type="radio" name="integrationOption" id="integrationNone" value="none">
+                <span class="checkbox-label" data-i18n-key="config_integration_none">Disable integrations</span>
+            </label>
+            <label class="checkbox-item">
+                <input class="checkbox-input" type="radio" name="integrationOption" id="enableLLM" value="llm">
+                <span class="checkbox-label" data-i18n-key="config_llm_integration_checkbox">Enable LLM integration</span>
+            </label>
+            <label class="checkbox-item">
+                <input class="checkbox-input" type="radio" name="integrationOption" id="enableWebhook" value="webhook">
+                <span class="checkbox-label" data-i18n-key="config_webhook_integration_checkbox">Enable webhook integration</span>
+            </label>
+        </div>
+
+        <div id="llmConfigSection" >
+            <div class="form-group">
+                <label class="label"
+                       for="llmType"
+                       data-i18n-key="config_LLM_type">LLM Type</label>
+                <select class="input"
+                        id="llmType">
+                    <option value="OpenAI">OpenAI</option>
+                    <option value="DeepSeek">DeepSeek</option>
+                    <option value="custom" data-i18n-key="config_LLM_type_custom">Custom</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="label"
+                       for="llmKey"
+                       data-i18n-key="config_LLM_api_key">API Key</label>
+                <input class="input" type="password" id="llmKey">
+                <p class="description" data-i18n-key="config_webhook_password_desc">Password will be encrypted with your passphrase and not stored in plaintext.</p>
+            </div>
+
+            <div class="form-group">
+                <label class="label"
+                       for="llmModel"
+                       data-i18n-key="config_LLM_model">Model</label>
+                <input class="input" type="text" id="llmModel">
+            </div>
+
+            <div class="form-group"
+                 id="apiUrlContainer" style="display: none;">
+                <label class="label"
+                       for="apiUrl"
+                       data-i18n-key="config_LLM_api_url">API URL</label>
+                <input class="input" type="url"
+                       id="apiUrl" placeholder="https://api.example.com/v1">
+            </div>
+        </div>
+
+        <div id="webhookConfigSection">
+            <div class="form-group">
+                <label class="label"
+                       for="webhookUrl"
+                       data-i18n-key="config_webhook_URL">Webhook URL</label>
+                <input class="input" type="url"
+                       id="webhookUrl" placeholder="https://example.com/webhook">
+            </div>
+
+            <div class="form-group">
+                <label class="label"
+                       for="webhookUsername"
+                       data-i18n-key="config_webhook_username">Username (optional)</label>
+                <input class="input" type="text"
+                       id="webhookUsername">
+            </div>
+
+            <div class="form-group">
+                <label class="label"
+                       for="webhookPassword"
+                       data-i18n-key="config_webhook_password">Password (optional)</label>
+                <input class="input" type="password"
+                       id="webhookPassword">
+                <p class="description" data-i18n-key="config_webhook_password_desc">Password will be encrypted with your passphrase and not stored in plaintext.</p>
+            </div>
+        </div>
+
+        <div class="form-group" id="passphraseContainer" style="display: none;">
+            <label class="label"
+                   for="passphrase"
+                   data-i18n-key="config_integration_passphrase">Passphrase (not stored, used to encrypt/decrypt your secrets)</label>
+            <input class="input" type="password"
+                   id="passphrase">
+        </div>
+
+        <h2 data-i18n-key="config_ticket_example">Ticket example</h2>
+
+        <div class="form-group">
+            <label class="label"
+                   for="summaryTicketExample"
+                   data-i18n-key="config_ticket_summary">Summary</label>
+            <input class="input"
+                   id="summaryTicketExample">
+        </div>
+
+        <div class="form-group">
+            <label class="label"
+                   for="descriptionTicketExample"
+                   data-i18n-key="config_ticket_description">Description</label>
+            <textarea class="input"
+                      rows="15"
+                      id="descriptionTicketExample"></textarea>
+        </div>
+
+        <h2 data-i18n-key="config_documentation_example">Documentation example</h2>
+
+        <div class="form-group">
+            <label class="label"
+                   for="titleDocumentationExample"
+                   data-i18n-key="config_documentation_title">Title</label>
+            <input class="input"
+                   id="titleDocumentationExample">
+        </div>
+
+        <div class="form-group">
+            <label class="label"
+                   for="stepsDocumentationExample"
+                   data-i18n-key="config_documentation_steps">Steps:</label>
+            <textarea class="input"
+                      rows="15"
+                      id="stepsDocumentationExample"></textarea>
+        </div>
+
+        <h2 data-i18n-key="config_limits">Limits configuration</h2>
+
+        <div class="form-group">
+            <label class="label"
+                   for="userActionsLimit"
+                   data-i18n-key="config_user_actions_limit">User Actions Limit</label>
+            <input class="input" type="number"
+                   id="userActionsLimit" placeholder="100" min="1" step="50">
+        </div>
+
+        <div class="form-group">
+            <label class="label"
+                   for="errorsLimit"
+                   data-i18n-key="config_errors_limit">Errors Limit</label>
+            <input class="input" type="number"
+                   id="errorsLimit" placeholder="50" min="1" step="10">
+        </div>
+
+        <div class="form-group">
+            <label class="label"
+                   for="textLengthLimit"
+                   data-i18n-key="config_text_length_limit">Text Length Limit</label>
+            <input class="input" type="number"
+                   id="textLengthLimit" placeholder="500" min="1" step="50">
+            <p class="description" data-i18n-key="config_text_length_limit_desc">Maximum characters stored for values, labels and error messages.</p>
+        </div>
+
+        <div class="form-group">
+            <div class="checkbox-item">
+                <input class="checkbox-input" type="checkbox" id="redactUrlQueryParams" checked>
+                <label class="checkbox-label" for="redactUrlQueryParams" data-i18n-key="config_redact_url_query">Strip query strings and hash from stored URLs</label>
+            </div>
+            <p class="description" data-i18n-key="config_redact_url_query_desc">When enabled, tab URLs, open/reload actions, and network error request URLs are stored as origin + path only (no ?query or #fragment). Reduces risk of saving session tokens in telemetry.</p>
+        </div>
+
+        <div class="navigation">
+            <button class="btn btn-primary"
+                    id="finishBtn"
+                    data-i18n-key="config_finish">Finish Setup
+            </button>
+        </div>
+    </div>
+</div>
+<script type="module" src="/src/configuration/configuration.js"></script>
+</body>
+</html>
