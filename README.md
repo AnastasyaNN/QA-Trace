@@ -31,6 +31,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 - API keys and webhook passwords are encrypted with a user-provided passphrase using **AES-256-GCM** with **PBKDF2** key derivation (600,000 iterations). The passphrase is never stored.
 - All data is stored locally in extension storage. No remote transmission occurs unless the user explicitly enables and triggers an integration.
 - Collected data auto-expires after 12 hours.
+- [Privacy Policy](docs/privacy-policy.md)
 
 ### Prompt Generation Modes
 
