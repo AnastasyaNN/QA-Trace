@@ -17,14 +17,18 @@ async function init() {
         return
 
     const actionTracker = UserActionTracker.getInstance()
-    const errorDetector = ErrorDetector.getInstance()
     actionTracker.startTracking()
-    if (extensionConfiguration.errorMonitoring.console)
-        await errorDetector.setupConsoleErrorTracking()
-    if (extensionConfiguration.errorMonitoring.network)
-        await errorDetector.setupNetworkErrorTracking()
-    if (extensionConfiguration.errorMonitoring.ui)
-        errorDetector.setupUIErrorTracking(extensionConfiguration.uiErrorSelectors)
+
+    const errorsDisabled = (extensionConfiguration.errorsDisabledUrls || []).includes(currentOrigin)
+    if (!errorsDisabled) {
+        const errorDetector = ErrorDetector.getInstance()
+        if (extensionConfiguration.errorMonitoring.console)
+            await errorDetector.setupConsoleErrorTracking()
+        if (extensionConfiguration.errorMonitoring.network)
+            await errorDetector.setupNetworkErrorTracking()
+        if (extensionConfiguration.errorMonitoring.ui)
+            errorDetector.setupUIErrorTracking(extensionConfiguration.uiErrorSelectors)
+    }
 
     browser.storage.onChanged.addListener((changes, areaName) => {
         if (areaName !== 'local' || !changes.configuration)

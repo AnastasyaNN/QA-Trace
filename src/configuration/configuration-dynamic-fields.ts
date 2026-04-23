@@ -16,6 +16,9 @@ export class DynamicFields {
         if (!container)
             return
 
+        const urlEntry = document.createElement('div')
+        urlEntry.className = 'url-entry'
+
         const urlItem = document.createElement('div')
         urlItem.className = 'url-item'
 
@@ -26,7 +29,24 @@ export class DynamicFields {
 
         urlItem.appendChild(input)
         urlItem.appendChild(DynamicFields.createRemoveButton())
-        container.appendChild(urlItem)
+        urlEntry.appendChild(urlItem)
+
+        const label = document.createElement('label')
+        label.className = 'checkbox-item checkbox-label'
+
+        const checkbox = document.createElement('input')
+        checkbox.type = 'checkbox'
+        checkbox.className = 'checkbox-input skip-errors-checkbox'
+
+        const span = document.createElement('span')
+        span.setAttribute('data-i18n-key', 'config_do_not_monitor_errors_for_URL')
+        span.textContent = browser.i18n.getMessage('config_do_not_monitor_errors_for_URL')
+
+        label.appendChild(checkbox)
+        label.appendChild(span)
+        urlEntry.appendChild(label)
+
+        container.appendChild(urlEntry)
     }
 
     static addUiErrorField(): void {
@@ -47,9 +67,9 @@ export class DynamicFields {
     }
 
     static removeUrlField(button: HTMLElement): void {
-        const urlItem = button.closest('.url-item')
-        if (urlItem && ConfigDOM.getHtmlElements("urls").length > 1)
-            urlItem.remove()
+        const urlEntry = button.closest('.url-entry')
+        if (urlEntry && ConfigDOM.getHtmlElements("urls").length > 1)
+            urlEntry.remove()
     }
 
     static removeUiErrorField(button: HTMLElement): void {

@@ -29,6 +29,7 @@ export class ConfigSave {
         webhookPassword?: string,
     } {
         const allowedUrls = ConfigValidation.getAllowedUrlsFromUI() || []
+        const errorsDisabledUrls = ConfigValidation.getErrorsDisabledUrlsFromUI()
 
         const errorMonitoring = {
             network: (ConfigDOM.getHtmlElement("monitorNetwork") as HTMLInputElement).checked,
@@ -77,6 +78,7 @@ export class ConfigSave {
 
         const configurationWithoutExamples: ExtensionConfiguration = {
             allowedUrls,
+            errorsDisabledUrls,
             errorMonitoring,
             llmEnabled,
             llm: llmConfig,

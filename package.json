@@ -1,6 +1,6 @@
 {
   "name": "qa_trace",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Track user actions, monitor errors and prepare prompts to generate bug reports and exploratory testing report",
   "type": "module",
   "scripts": {

@@ -82,6 +82,7 @@ export interface EncryptedPassword {
 
 export interface ExtensionConfiguration {
     allowedUrls: string[],
+    errorsDisabledUrls?: string[],
     llmEnabled?: boolean,
     errorMonitoring: {
         network: boolean,

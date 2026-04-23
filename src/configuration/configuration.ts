@@ -64,8 +64,15 @@ class ConfigurationPage {
                 : 'none'
         const redactUrlQueryEl = ConfigDOM.getHtmlElement('redactUrlQueryParams') as HTMLInputElement | null
 
+        const errorsDisabledSet = new Set(configuration.errorsDisabledUrls || [])
         urlInputs.forEach((input, index) => {
             (input as HTMLInputElement).value = configuration.allowedUrls[index] || ''
+            const urlEntry = input.closest('.url-entry')
+            const checkbox = urlEntry?.querySelector('.skip-errors-checkbox') as HTMLInputElement | null
+            if (checkbox) {
+                const origin = configuration.allowedUrls[index] || ''
+                checkbox.checked = errorsDisabledSet.has(origin)
+            }
         })
         uiErrorInputs.forEach((input, index) => {
             (input as HTMLInputElement).value = configuration.uiErrorSelectors[index] || ''

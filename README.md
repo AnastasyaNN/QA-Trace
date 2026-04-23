@@ -18,6 +18,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 - **Console errors** — intercepts `window.onerror` and unhandled promise rejections.
 - **Network errors** — patches `fetch` and `XMLHttpRequest` to capture failed HTTP requests with status, headers, and response body.
 - **UI errors** — watches the DOM via `MutationObserver` for elements matching configurable CSS selectors (default: `div[id^="__error"]`).
+- Error monitoring can be disabled per URL — useful when a site produces noise you don't need, while still tracking user actions.
 - Displays in-page toast notifications when errors are detected.
 - Automatically captures a screenshot for UI errors and can be copied from the popup.
 - Console and network error data is stored and can be copied in **JSON format** from the popup.
@@ -131,7 +132,7 @@ On first install, the extension opens the configuration page. You can reopen it 
 
 | Setting | Description |
 |---|---|
-| **Allowed URLs** | Origins where tracking is active (required) |
+| **Allowed URLs** | Origins where tracking is active (required). Error monitoring can be disabled per URL |
 | **Error Monitoring** | Toggle network, console, and UI error detection |
 | **Language** | Output language for LLM prompts (auto / English / Russian) |
 | **Integrations** | LLM (OpenAI / DeepSeek / custom) or webhook, with encrypted credentials |
@@ -149,7 +150,7 @@ On first install, the extension opens the configuration page. You can reopen it 
 Contributions are welcome. Please open an issue to discuss proposed changes before submitting a pull request.
 
 1. Fork the repository.
-2. Create a feature branch from `master`.
+2. Create a feature branch from `main`.
 3. Make your changes.
 4. Run `npm run build` to verify the build succeeds for both browsers.
 5. Submit a pull request.

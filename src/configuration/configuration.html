@@ -17,14 +17,20 @@
 
         <div class="form-group">
             <div id="urls-container">
-                <div class="url-item">
-                    <input class="input url-input"
-                           type="url" placeholder="https://example.com">
-                    <button type="button"
-                            data-i18n-key="config_remove"
-                            class="btn btn-secondary btn-remove">
-                        Remove
-                    </button>
+                <div class="url-entry">
+                    <div class="url-item">
+                        <input class="input url-input"
+                               type="url" placeholder="https://example.com">
+                        <button type="button"
+                                data-i18n-key="config_remove"
+                                class="btn btn-secondary btn-remove">
+                            Remove
+                        </button>
+                    </div>
+                    <label class="checkbox-item checkbox-label">
+                        <input class="checkbox-input skip-errors-checkbox" type="checkbox">
+                        <span data-i18n-key="config_do_not_monitor_errors_for_URL">Don't monitor errors for the URL</span>
+                    </label>
                 </div>
             </div>
             <button type="button" id="addUrl"
