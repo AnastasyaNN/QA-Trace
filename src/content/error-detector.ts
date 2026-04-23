@@ -44,7 +44,7 @@ export class ErrorDetector {
             subtree: true
         }
 
-        const callback = (mutationsList: MutationRecord[], observer: MutationObserver) => {
+        const callback = (mutationsList: MutationRecord[]) => {
             const groupedByAnchor: Map<HTMLElement, Set<Element>> = new Map()
 
             for (const mutation of mutationsList) {
@@ -73,9 +73,6 @@ export class ErrorDetector {
                     console.debug('Failed to record UI error', err)
                 }
             })()
-
-            if (groupedByAnchor.size > 0)
-                observer.disconnect()
         }
 
         const observer = new MutationObserver(callback)
