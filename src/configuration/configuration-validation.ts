@@ -54,6 +54,28 @@ export class ConfigValidation {
         return uniqueOrigins
     }
 
+    static getErrorsDisabledUrlsFromUI(): string[] {
+        const urlEntries = document.querySelectorAll('.url-entry')
+        const origins: string[] = []
+
+        urlEntries.forEach(entry => {
+            const checkbox = entry.querySelector('.skip-errors-checkbox') as HTMLInputElement | null
+            const urlInput = entry.querySelector('.url-input') as HTMLInputElement | null
+            if (!checkbox?.checked || !urlInput)
+                return
+            const value = urlInput.value.trim()
+            if (!value)
+                return
+            try {
+                const parsed = new URL(value)
+                if (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+                    origins.push(parsed.origin)
+            } catch { /* invalid URL, skip */ }
+        })
+
+        return Array.from(new Set(origins))
+    }
+
     static getUiErrorSelectorsFromUI(): string[] {
         const selectorInputs = ConfigDOM.getHtmlElements("ui-errors")
         const selectors: string[] = []

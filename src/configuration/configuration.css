@@ -155,6 +155,11 @@ h2 {
     user-select: none;
 }
 
+.url-entry {
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border-default);
+}
+
 .url-item {
     display: flex;
     gap: 10px;

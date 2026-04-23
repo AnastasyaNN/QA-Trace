@@ -141,6 +141,7 @@
   "config_errors_limit": {"message":  "Количество ошибок"},
   "config_text_length_limit": {"message":  "Длина текста"},
   "config_text_length_limit_desc": {"message":  "Максимальное количество знаков для значений, меток и сообщений об ошибках."},
+  "config_do_not_monitor_errors_for_URL": {"message": "Не отслеживать ошибки для этого URL"},
   "config_redact_url_query": {"message": "Не сохранять query и hash для URL"},
   "config_redact_url_query_desc": {"message": "URL вкладок, действия открытия/перезагрузки и URL запросов в сетевых ошибках сохраняются как host + путь."},
   "config_finish": {"message":  "Сохранить"},

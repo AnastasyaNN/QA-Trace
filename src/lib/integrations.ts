@@ -4,6 +4,7 @@ import {AllowedOrigins} from "./allowed-origins";
 
 export const DEFAULT_CONFIGURATION: ExtensionConfiguration = {
     allowedUrls: [],
+    errorsDisabledUrls: [],
     llmEnabled: false,
     errorMonitoring: {
         network: true,
@@ -54,6 +55,7 @@ export class ExtensionConfigurationManager {
             ...(stored || {}),
             llmEnabled: stored?.llmEnabled ?? DEFAULT_CONFIGURATION.llmEnabled,
             webhookEnabled: stored?.webhookEnabled ?? DEFAULT_CONFIGURATION.webhookEnabled,
+            errorsDisabledUrls: AllowedOrigins.normalizeAllowedUrls(stored?.errorsDisabledUrls),
             redactUrlQueryParams: stored?.redactUrlQueryParams ?? DEFAULT_CONFIGURATION.redactUrlQueryParams,
             llm: {
                 ...DEFAULT_CONFIGURATION.llm,
@@ -72,6 +74,7 @@ export class ExtensionConfigurationManager {
         const sanitized = {
             ...data,
             allowedUrls: AllowedOrigins.normalizeAllowedUrls(data.allowedUrls),
+            errorsDisabledUrls: AllowedOrigins.normalizeAllowedUrls(data.errorsDisabledUrls),
             llm: {
                 ...data.llm,
                 apiKey: ''
