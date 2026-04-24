@@ -44,11 +44,12 @@ async function init() {
     browser.runtime.onMessage.addListener((message: any, _sender: browser.Runtime.MessageSender, sendResponse: (response: unknown) => void) => {
         if (message.type === 'GET_PAGE_INFO') {
             void ExtensionConfigurationManager.getConfiguration().then((config) => {
-                const redact = config.redactUrlQueryParams !== false
                 const href = window.location.href
-                const url = redact
-                    ? (UrlPrivacy.stripUrlQueryAndHashForStorage(href) ?? href)
-                    : href
+                const url = UrlPrivacy.redactUrlIfEnabled(
+                    href,
+                    !!config.redactUrlQueryParams,
+                    !!config.redactUrlOrigin
+                ) ?? href
                 sendResponse({
                     url,
                     title: document.title,

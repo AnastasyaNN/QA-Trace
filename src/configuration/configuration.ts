@@ -63,6 +63,7 @@ class ConfigurationPage {
                 ? 'webhook'
                 : 'none'
         const redactUrlQueryEl = ConfigDOM.getHtmlElement('redactUrlQueryParams') as HTMLInputElement | null
+        const redactUrlOriginEl = ConfigDOM.getHtmlElement('redactUrlOrigin') as HTMLInputElement | null
 
         const errorsDisabledSet = new Set(configuration.errorsDisabledUrls || [])
         urlInputs.forEach((input, index) => {
@@ -112,7 +113,9 @@ class ConfigurationPage {
         if (textLengthLimit)
             textLengthLimit.value = configuration.textLengthLimit?.toString()
         if (redactUrlQueryEl)
-            redactUrlQueryEl.checked = configuration.redactUrlQueryParams !== false
+            redactUrlQueryEl.checked = !!configuration.redactUrlQueryParams
+        if (redactUrlOriginEl)
+            redactUrlOriginEl.checked = !!configuration.redactUrlOrigin
         if (webhookUrlInput)
             webhookUrlInput.value = configuration.webhook?.url || ''
         if (webhookUsernameInput)

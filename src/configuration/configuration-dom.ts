@@ -6,7 +6,7 @@ export type ConfigElementId =
     | 'webhookUsername' | 'webhookPassword' | 'webhookUrl'
     | 'languageSelect' | 'summaryTicketExample' | 'descriptionTicketExample'
     | 'titleDocumentationExample' | 'stepsDocumentationExample'
-    | 'userActionsLimit' | 'errorsLimit' | 'textLengthLimit' | 'redactUrlQueryParams'
+    | 'userActionsLimit' | 'errorsLimit' | 'textLengthLimit' | 'redactUrlQueryParams' | 'redactUrlOrigin'
     | 'finishBtn' | 'addUrl' | 'addUiError'
 
 export type ConfigElementsId = 'urls' | 'ui-errors' | 'intObjects'

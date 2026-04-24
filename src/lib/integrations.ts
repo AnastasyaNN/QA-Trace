@@ -27,6 +27,7 @@ export const DEFAULT_CONFIGURATION: ExtensionConfiguration = {
         username: '',
     },
     redactUrlQueryParams: true,
+    redactUrlOrigin: true
 };
 
 export class ExtensionConfigurationManager {
@@ -57,6 +58,7 @@ export class ExtensionConfigurationManager {
             webhookEnabled: stored?.webhookEnabled ?? DEFAULT_CONFIGURATION.webhookEnabled,
             errorsDisabledUrls: AllowedOrigins.normalizeAllowedUrls(stored?.errorsDisabledUrls),
             redactUrlQueryParams: stored?.redactUrlQueryParams ?? DEFAULT_CONFIGURATION.redactUrlQueryParams,
+            redactUrlOrigin: stored?.redactUrlOrigin ?? DEFAULT_CONFIGURATION.redactUrlOrigin,
             llm: {
                 ...DEFAULT_CONFIGURATION.llm,
                 ...(stored?.llm || {})
