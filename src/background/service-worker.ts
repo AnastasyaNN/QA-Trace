@@ -1,5 +1,5 @@
 import {StorageManager} from "../lib/storage";
-import {UserAction, ErrorLog, TabInfo} from "../lib/types";
+import {UserAction, ErrorLog, TabInfo, NetworkRequestLog} from "../lib/types";
 import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {ScreenshotUtils} from "../lib/screenshots";
@@ -147,13 +147,7 @@ function truncateHeadersRecord(input: unknown): Record<string, string> | undefin
         : undefined
 }
 
-function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boolean): Omit<ErrorLog, "tabInfo"> | null {
-    const timestamp = Number(input.timestamp)
-    if (!input || typeof input !== 'object' || !isValidErrorType(input.type)) {
-        return null
-    }
-    if (!Number.isFinite(timestamp))
-        return null
+function sanitizeNetworkFields(input: any, redactUrlQuery: boolean, redactOrigin: boolean) {
     let urlRequested: string | undefined
     if (input.urlRequested) {
         let u = String(input.urlRequested)
@@ -161,15 +155,6 @@ function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boo
         urlRequested = truncateField(u, 2000)
     }
     return {
-        id: input.id
-            ? truncateField(input.id, 100)
-            : undefined,
-        type: input.type,
-        message: truncateField(input.message, MAX_TEXT_FIELD_LENGTH),
-        timestamp,
-        stack: input.stack
-            ? truncateField(input.stack, MAX_TEXT_FIELD_LENGTH)
-            : undefined,
         status: typeof input.status === 'number'
             ? input.status
             : undefined,
@@ -185,6 +170,39 @@ function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boo
         responseBody: input.responseBody
             ? truncateField(input.responseBody, MAX_TEXT_FIELD_LENGTH)
             : undefined
+    }
+}
+
+function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boolean): Omit<ErrorLog, "tabInfo"> | null {
+    const timestamp = Number(input.timestamp)
+    if (!input || typeof input !== 'object' || !isValidErrorType(input.type)) {
+        return null
+    }
+    if (!Number.isFinite(timestamp))
+        return null
+    return {
+        id: input.id
+            ? truncateField(input.id, 100)
+            : undefined,
+        type: input.type,
+        message: truncateField(input.message, MAX_TEXT_FIELD_LENGTH),
+        timestamp,
+        stack: input.stack
+            ? truncateField(input.stack, MAX_TEXT_FIELD_LENGTH)
+            : undefined,
+        ...sanitizeNetworkFields(input, redactUrlQuery, redactOrigin)
+    }
+}
+
+function sanitizeNetworkRequest(input: any, redactUrlQuery: boolean, redactOrigin: boolean): Omit<NetworkRequestLog, "tabInfo"> | null {
+    const timestamp = Number(input.timestamp)
+    if (!input || typeof input !== 'object')
+        return null
+    if (!Number.isFinite(timestamp))
+        return null
+    return {
+        timestamp,
+        ...sanitizeNetworkFields(input, redactUrlQuery, redactOrigin)
     }
 }
 
@@ -216,6 +234,15 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
             if (error.type === 'ui' && error.id && sender?.tab?.windowId) {
                 await ScreenshotUtils.captureAndStoreUiScreenshot(error.id, tabInfo, sender.tab.windowId);
             }
+            break
+
+        case 'NETWORK_REQUEST_DETECTED':
+            if (!allowErrorBurst(sender.tab?.id))
+                return
+            const networkRequest = sanitizeNetworkRequest(message.data, redactQuery, redactOrigin)
+            if (!networkRequest)
+                return
+            await StorageManager.addNetworkRequest(networkRequest, tabInfo)
             break
 
         case 'CLEAR_DATA':

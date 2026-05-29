@@ -33,6 +33,18 @@ export interface ErrorLog {
     networkPayloadId?: string
 }
 
+export interface NetworkRequestLog {
+    timestamp: number,
+    tabInfo: TabInfo,
+    status?: number,
+    method?: string,
+    urlRequested?: string,
+    requestHeaders?: Record<string, string>,
+    requestBody?: string,
+    responseHeaders?: Record<string, string>,
+    responseBody?: string
+}
+
 export interface NetworkErrorPayload {
     id: string,
     errorId: string,
@@ -60,6 +72,7 @@ export interface TabInfo {
 export interface StorageData {
     userActions: UserAction[],
     errors: ErrorLog[],
+    networkRequests: NetworkRequestLog[],
     uiErrorScreenshots: UiErrorScreenshot[],
     networkErrorPayloads: NetworkErrorPayload[]
 }
@@ -83,6 +96,7 @@ export interface EncryptedPassword {
 export interface ExtensionConfiguration {
     allowedUrls: string[],
     errorsDisabledUrls?: string[],
+    allNetworkRequestsUrls?: string[],
     llmEnabled?: boolean,
     errorMonitoring: {
         network: boolean,
@@ -99,6 +113,7 @@ export interface ExtensionConfiguration {
     },
     userActionsLimit: number,
     errorsLimit: number,
+    networkRequestsLimit: number,
     textLengthLimit: number,
     webhookEnabled?: boolean,
     webhook?: {

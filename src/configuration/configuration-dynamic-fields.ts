@@ -31,22 +31,29 @@ export class DynamicFields {
         urlItem.appendChild(DynamicFields.createRemoveButton())
         urlEntry.appendChild(urlItem)
 
-        const label = document.createElement('label')
-        label.className = 'checkbox-item checkbox-label'
-
-        const checkbox = document.createElement('input')
-        checkbox.type = 'checkbox'
-        checkbox.className = 'checkbox-input skip-errors-checkbox'
-
-        const span = document.createElement('span')
-        span.setAttribute('data-i18n-key', 'config_do_not_monitor_errors_for_URL')
-        span.textContent = browser.i18n.getMessage('config_do_not_monitor_errors_for_URL')
-
-        label.appendChild(checkbox)
-        label.appendChild(span)
-        urlEntry.appendChild(label)
+        addCheckBox("config_do_not_monitor_errors_for_URL")
+        addCheckBox("config_monitor_network_for_URL")
 
         container.appendChild(urlEntry)
+
+        function addCheckBox(value: "config_do_not_monitor_errors_for_URL" | "config_monitor_network_for_URL") {
+            const label = document.createElement('label')
+            label.className = 'checkbox-item checkbox-label'
+
+            const checkbox = document.createElement('input')
+            checkbox.type = 'checkbox'
+            checkbox.className = value === "config_do_not_monitor_errors_for_URL"
+                ? 'checkbox-input skip-errors-checkbox'
+                : 'checkbox-input monitor-network-requests-checkbox'
+
+            const span = document.createElement('span')
+            span.setAttribute('data-i18n-key', value)
+            span.textContent = browser.i18n.getMessage(value)
+
+            label.appendChild(checkbox)
+            label.appendChild(span)
+            urlEntry.appendChild(label)
+        }
     }
 
     static addUiErrorField(): void {

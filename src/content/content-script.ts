@@ -1,5 +1,5 @@
 import {UserActionTracker} from "./user-action-tracker";
-import {ErrorDetector} from "./error-detector";
+import {PageMonitor} from "./page-monitor";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {AllowedOrigins} from "../lib/allowed-origins";
 import {UrlPrivacy} from "../lib/url-privacy";
@@ -19,15 +19,21 @@ async function init() {
     const actionTracker = UserActionTracker.getInstance()
     actionTracker.startTracking()
 
+    const allNetworkRequestsEnabled = (extensionConfiguration.allNetworkRequestsUrls || []).includes(currentOrigin)
     const errorsDisabled = (extensionConfiguration.errorsDisabledUrls || []).includes(currentOrigin)
-    if (!errorsDisabled) {
-        const errorDetector = ErrorDetector.getInstance()
-        if (extensionConfiguration.errorMonitoring.console)
-            await errorDetector.setupConsoleErrorTracking()
-        if (extensionConfiguration.errorMonitoring.network)
-            await errorDetector.setupNetworkErrorTracking()
-        if (extensionConfiguration.errorMonitoring.ui)
-            errorDetector.setupUIErrorTracking(extensionConfiguration.uiErrorSelectors)
+
+    if (allNetworkRequestsEnabled || !errorsDisabled) {
+        const pageMonitor = PageMonitor.getInstance()
+        if (allNetworkRequestsEnabled)
+            await pageMonitor.setupFullNetworkTracking()
+        if (!errorsDisabled) {
+            if (extensionConfiguration.errorMonitoring.console)
+                await pageMonitor.setupConsoleErrorTracking()
+            if (extensionConfiguration.errorMonitoring.network)
+                await pageMonitor.setupNetworkErrorTracking()
+            if (extensionConfiguration.errorMonitoring.ui)
+                pageMonitor.setupUIErrorTracking(extensionConfiguration.uiErrorSelectors)
+        }
     }
 
     browser.storage.onChanged.addListener((changes, areaName) => {

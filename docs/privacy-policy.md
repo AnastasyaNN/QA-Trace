@@ -1,6 +1,6 @@
 # QA Trace — Privacy Policy
 
-**Last updated:** April 19, 2026
+**Last updated:** May 29, 2026
 
 QA Trace is a browser extension that helps QA engineers capture user actions and runtime errors during exploratory testing sessions and convert them into structured reports. This policy explains what data the extension collects, how it is stored, and under what circumstances it may be transmitted externally.
 
@@ -13,6 +13,7 @@ When tracking is active on an allowed origin, QA Trace collects:
 - **User actions** — event type (click, input, select, change, tab open/reload), element selector, optional input value, timestamp, tab URL, and tab title.
 - **Console errors** — error message, stack trace, and timestamp.
 - **Network errors** — HTTP method, URL, status code, request/response headers and body, and timestamp.
+- **Network requests** — when **Track all network requests** is enabled for an origin, the same fields (method, URL, status, request/response headers and body, timestamp) are recorded for successful requests as well, not only failures.
 - **UI error screenshots** — a base64-encoded PNG image of the visible tab area captured when a UI error is detected.
 
 QA Trace does **not** collect data on pages outside your configured Allowed URLs list. Password input values are never captured.
@@ -22,14 +23,14 @@ QA Trace does **not** collect data on pages outside your configured Allowed URLs
 QA Trace applies automatic redaction before storing data:
 
 - **URL query strings and hash fragments** are stripped by default to prevent accidental storage of tokens or session identifiers.
-- **Sensitive HTTP headers** (Authorization, Cookie, X-API-Key, and other token-bearing headers) are removed from stored network error data.
+- **Sensitive HTTP headers** (Authorization, Cookie, X-API-Key, and other token-bearing headers) are removed from stored network error and tracked-request data.
 - **Sensitive body fields** (password, token, api_key, session, and similar) are replaced with `[REDACTED]`.
 
 ## 3. Data storage
 
 - All collected data is stored in `browser.storage.local` on your device.
 - Stored data **automatically expires after 12 hours**.
-- Storage is subject to configurable limits (actions, errors, screenshots, network payloads).
+- Storage is subject to configurable limits (actions, errors, network requests, screenshots, network payloads).
 - You can clear all stored data at any time from the extension popup.
 
 ## 4. External data transmission

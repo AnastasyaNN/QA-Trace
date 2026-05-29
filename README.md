@@ -11,7 +11,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 - Captures **click**, **double-click**, **input**, **change**, **tab open**, and **tab reload** events.
 - Records element tag, CSS selector, entered value (passwords are masked), closest label text, timestamp, and tab context.
 - Deduplicates repeated actions on the same element.
-- Configurable storage limits for actions, errors, and text length.
+- Configurable storage limits for actions, errors, network requests, and text length.
 
 ### Error Detection
 
@@ -23,11 +23,18 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 - Automatically captures a screenshot for UI errors and can be copied from the popup.
 - Console and network error data is stored and can be copied in **JSON format** from the popup.
 
+### Network Request Tracking
+
+- Optionally records **all** network requests (`fetch` and `XMLHttpRequest`) for a URL — not just failures — by enabling **Track all network requests** per URL.
+- Captures method, URL, status, request/response headers, and bodies, with the same sensitive-data redaction applied to network errors.
+- Stored separately from errors, with a **configurable limit** (default: 20 most recent requests).
+- Shown in the popup below Recent Errors. Each request has a **Copy** button (JSON), and the whole block can be exported with **Download all** as a `.txt` file.
+
 ### Privacy and Security
 
 - Tracking runs **only** on origins explicitly added to **Allowed URLs**.
 - URL query strings and hash fragments are stripped before storage by default (prevents storing session tokens).
-- Sensitive HTTP headers (`Authorization`, `Cookie`, API keys, tokens) are automatically redacted from network error payloads.
+- Sensitive HTTP headers (`Authorization`, `Cookie`, API keys, tokens) are automatically redacted from network error and tracked-request payloads.
 - Sensitive fields in request/response bodies are redacted.
 - API keys and webhook passwords are encrypted with a user-provided passphrase using **AES-256-GCM** with **PBKDF2** key derivation (600,000 iterations). The passphrase is never stored.
 - All data is stored locally in extension storage. No remote transmission occurs unless the user explicitly enables and triggers an integration.
@@ -132,13 +139,13 @@ On first install, the extension opens the configuration page. You can reopen it 
 
 | Setting | Description |
 |---|---|
-| **Allowed URLs** | Origins where tracking is active (required). Error monitoring can be disabled per URL |
+| **Allowed URLs** | Origins where tracking is active (required). Per URL, error monitoring can be disabled and full network request tracking can be enabled |
 | **Error Monitoring** | Toggle network, console, and UI error detection |
 | **Language** | Output language for LLM prompts (auto / English / Russian) |
 | **Integrations** | LLM (OpenAI / DeepSeek / custom) or webhook, with encrypted credentials |
 | **Ticket Example** | Example summary and description to guide LLM output format |
 | **Documentation Example** | Example title and steps to guide documentation output |
-| **Limits** | Max stored actions, errors, and text length per field |
+| **Limits** | Max stored actions, errors, network requests, and text length per field |
 | **URL Redaction** | Strip query strings and hash fragments from stored URLs |
 
 ## Documentation

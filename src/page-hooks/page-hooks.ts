@@ -1,6 +1,6 @@
 // Runtime init (token/redaction flag) is sent by content script via window.postMessage.
 
-type PostKind = 'console' | 'network';
+type PostKind = 'console' | 'network' | 'network-request';
 
 interface QaTraceXhr extends XMLHttpRequest {
     _qaMethod: string,
@@ -20,6 +20,16 @@ interface ConsolePayload {
 
 interface NetworkPayload {
     message: string,
+    status?: number,
+    method: string,
+    urlRequested: string,
+    requestHeaders: Record<string, string>,
+    requestBody: string,
+    responseHeaders: Record<string, string>,
+    responseBody: string
+}
+
+interface NetworkRequestPayload {
     status?: number,
     method: string,
     urlRequested: string,
@@ -59,6 +69,7 @@ class QaTracePageHooks {
     private qaTraceToken: string | null = null
     private shouldStripUrlQuery = true
     private shouldStripOrigin = true
+    private trackAllNetwork = false
 
     private readonly originalFetch: typeof window.fetch
     private readonly originalXhrOpen: typeof XMLHttpRequest.prototype.open
@@ -96,6 +107,7 @@ class QaTracePageHooks {
         this.qaTraceToken = event.data.token
         this.shouldStripUrlQuery = event.data.stripUrlQuery
         this.shouldStripOrigin = event.data.stripOrigin
+        this.trackAllNetwork = event.data.trackAllNetwork
     }
 
     private readonly onWindowError = (event: ErrorEvent): void => {
@@ -174,7 +186,7 @@ class QaTracePageHooks {
         return String(input)
     }
 
-    private post(kind: PostKind, payload: ConsolePayload | NetworkPayload): void {
+    private post(kind: PostKind, payload: ConsolePayload | NetworkPayload | NetworkRequestPayload): void {
         if (!this.qaTraceToken)
             return
         const targetOrigin = typeof window !== 'undefined' && window.location
@@ -322,20 +334,29 @@ class QaTracePageHooks {
         const requestBody = this.parseRequestBody((init as RequestInit)?.body)
         try {
             const response = await this.originalFetch(...args)
-            if (!response.ok) {
-                const responseHeaders = this.headersToObject(response.headers)
-                const responseBody = await this.readResponseBodySafe(response)
+            const isError = !response.ok && response.status !== 0
+            const shouldRecordRequest = this.trackAllNetwork && response.status !== 0
+            if (!isError && !shouldRecordRequest)
+                return response
+
+            const responseHeaders = this.headersToObject(response.headers)
+            const responseBody = await this.readResponseBodySafe(response)
+            const payload: NetworkRequestPayload = {
+                status: response.status,
+                method: requestMethod,
+                urlRequested: requestUrl,
+                requestHeaders,
+                requestBody,
+                responseHeaders,
+                responseBody
+            }
+            if (isError)
                 this.post('network', {
                     message: 'HTTP ' + response.status + ' ' + response.statusText,
-                    status: response.status,
-                    method: requestMethod,
-                    urlRequested: requestUrl,
-                    requestHeaders,
-                    requestBody,
-                    responseHeaders,
-                    responseBody
+                    ...payload
                 })
-            }
+            if (shouldRecordRequest)
+                this.post('network-request', payload)
             return response
         } catch (error) {
             this.post('network', {
@@ -393,30 +414,38 @@ class QaTracePageHooks {
                 })
             })
             this.addEventListener('load', () => {
-                if (this.status >= 400) {
-                    const responseHeaders: Record<string, string> = {}
-                    const rawHeaders = this.getAllResponseHeaders?.() || ''
-                    rawHeaders.split('\n').forEach((line) => {
-                        const idx = line.indexOf(':')
-                        if (idx <= 0)
-                            return
-                        const key = line.slice(0, idx).trim()
-                        const value = line.slice(idx + 1).trim()
-                        if (!self.isSensitiveHeader(key))
-                            responseHeaders[key] = value
-                    })
-                    const xhrUrlLoaded = self.stripRequestUrlForTelemetry(this._qaUrl || '')
+                const isError = this.status >= 400
+                const shouldRecordRequest = self.trackAllNetwork && this.status !== 0
+                if (!isError && !shouldRecordRequest)
+                    return
+                const responseHeaders: Record<string, string> = {}
+                const rawHeaders = this.getAllResponseHeaders?.() || ''
+                rawHeaders.split('\n').forEach((line) => {
+                    const idx = line.indexOf(':')
+                    if (idx <= 0)
+                        return
+                    const key = line.slice(0, idx).trim()
+                    const value = line.slice(idx + 1).trim()
+                    if (!self.isSensitiveHeader(key))
+                        responseHeaders[key] = value
+                })
+                const xhrUrlLoaded = self.stripRequestUrlForTelemetry(this._qaUrl || '')
+                const payload: NetworkRequestPayload = {
+                    status: this.status,
+                    method: this._qaMethod || 'GET',
+                    urlRequested: xhrUrlLoaded,
+                    requestHeaders: this._qaRequestHeaders || {},
+                    requestBody: this._qaRequestBody || '',
+                    responseHeaders,
+                    responseBody: self.redactBodyText(this.responseText || '')
+                }
+                if (isError)
                     self.post('network', {
                         message: 'XHR ' + (this._qaMethod || 'GET') + ' ' + xhrUrlLoaded + ' failed with status ' + this.status,
-                        status: this.status,
-                        method: this._qaMethod || 'GET',
-                        urlRequested: xhrUrlLoaded,
-                        requestHeaders: this._qaRequestHeaders || {},
-                        requestBody: this._qaRequestBody || '',
-                        responseHeaders,
-                        responseBody: self.redactBodyText(this.responseText || '')
+                        ...payload
                     })
-                }
+                if (shouldRecordRequest)
+                    self.post('network-request', payload)
             })
             return originalXhrSend.call(this, body)
         }

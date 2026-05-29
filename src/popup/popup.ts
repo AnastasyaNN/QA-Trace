@@ -69,6 +69,20 @@ class PopupManager {
             }
         })
 
+        PopupDOM.getHtmlElement('networkRequestsList')?.addEventListener('click', (event) => {
+            const target = event.target as HTMLElement
+            const btn = target.closest('.btn-copy-network-request')
+            if (btn) {
+                const idx = Number((btn as HTMLElement).dataset.requestIndex)
+                if (!Number.isNaN(idx))
+                    void this.copyNetworkRequestDetails(idx)
+            }
+        })
+
+        PopupDOM.getHtmlElement('downloadNetworkRequests')?.addEventListener('click', () => {
+            this.downloadNetworkRequests()
+        })
+
         PopupDOM.getHtmlElement('copyLatestSummary')?.addEventListener('click', async () => {
             const summary = PopupDOM.getHtmlElement('latestResponseSummary') as HTMLInputElement
             if (summary)
@@ -110,6 +124,26 @@ class PopupManager {
                 browser.i18n.getMessage('popup_no_errors_detected'),
                 browser.i18n.getMessage('popup_error_copy'),
                 browser.i18n.getMessage('popup_error_copy_screenshot')
+            ))
+        }
+
+        const networkTrackingEnabled = !!this.popupContext.configuration?.allNetworkRequestsUrls?.length
+        const networkRequests = this.popupContext.storageData.networkRequests
+
+        const networkRequestsSection = PopupDOM.getHtmlElement('recentNetworkRequestsSection')
+        if (networkRequestsSection)
+            networkRequestsSection.style.display = networkTrackingEnabled ? '' : 'none'
+
+        const downloadNetworkRequests = PopupDOM.getHtmlElement('downloadNetworkRequests')
+        if (downloadNetworkRequests)
+            downloadNetworkRequests.style.display = networkRequests.length > 0 ? '' : 'none'
+
+        const networkRequestsList = PopupDOM.getHtmlElement('networkRequestsList')
+        if (networkRequestsList) {
+            networkRequestsList.replaceChildren(PopupRenderer.buildRecentNetworkRequests(
+                networkRequests.slice(0, 5),
+                browser.i18n.getMessage('popup_no_network_requests'),
+                browser.i18n.getMessage('popup_error_copy')
             ))
         }
 
@@ -182,6 +216,34 @@ class PopupManager {
         } catch {
             alert(browser.i18n.getMessage('popup_failed_to_copy'))
         }
+    }
+
+    private async copyNetworkRequestDetails(requestIndex: number): Promise<void> {
+        if (!this.popupContext.storageData)
+            return
+        const request = this.popupContext.storageData.networkRequests[requestIndex]
+        if (!request)
+            return
+        await this.copyToClipboard(JSON.stringify(request, null, 2))
+    }
+
+    private downloadNetworkRequests(): void {
+        if (!this.popupContext.storageData)
+            return
+        const requests = this.popupContext.storageData.networkRequests.slice().reverse()
+        const json = JSON.stringify(requests, null, 2)
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const filename = `qa-trace-network-requests-${timestamp}.txt`
+
+        const blob = new Blob([json], {type: 'text/plain'})
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = filename
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 10000)
     }
 }
 

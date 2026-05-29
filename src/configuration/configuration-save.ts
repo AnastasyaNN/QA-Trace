@@ -29,7 +29,8 @@ export class ConfigSave {
         webhookPassword?: string,
     } {
         const allowedUrls = ConfigValidation.getAllowedUrlsFromUI() || []
-        const errorsDisabledUrls = ConfigValidation.getErrorsDisabledUrlsFromUI()
+        const errorsDisabledUrls = ConfigValidation.getUrlsFromUIByConfigType("skip-errors-checkbox")
+        const allNetworkRequestsUrls = ConfigValidation.getUrlsFromUIByConfigType("monitor-network-requests-checkbox")
 
         const errorMonitoring = {
             network: (ConfigDOM.getHtmlElement("monitorNetwork") as HTMLInputElement).checked,
@@ -58,6 +59,7 @@ export class ConfigSave {
 
         const userActionsLimit = (ConfigDOM.getHtmlElement("userActionsLimit") as HTMLInputElement).value
         const errorsLimit = (ConfigDOM.getHtmlElement("errorsLimit") as HTMLInputElement).value
+        const networkRequestsLimit = (ConfigDOM.getHtmlElement("networkRequestsLimit") as HTMLInputElement).value
         const textLengthLimit = (ConfigDOM.getHtmlElement("textLengthLimit") as HTMLInputElement).value
         const redactUrlQueryParams = ConfigDOM.getHtmlElement('redactUrlQueryParams') as HTMLInputElement
         const redactUrlOrigin = ConfigDOM.getHtmlElement('redactUrlOrigin') as HTMLInputElement
@@ -80,12 +82,14 @@ export class ConfigSave {
         const configurationWithoutExamples: ExtensionConfiguration = {
             allowedUrls,
             errorsDisabledUrls,
+            allNetworkRequestsUrls,
             errorMonitoring,
             llmEnabled,
             llm: llmConfig,
             language: language || 'auto',
             userActionsLimit: Math.max(1, Math.floor(+userActionsLimit)) || DEFAULT_CONFIGURATION.userActionsLimit,
             errorsLimit: Math.max(1, Math.floor(+errorsLimit)) || DEFAULT_CONFIGURATION.errorsLimit,
+            networkRequestsLimit: Math.max(1, Math.floor(+networkRequestsLimit)) || DEFAULT_CONFIGURATION.networkRequestsLimit,
             textLengthLimit: Math.max(1, Math.floor(+textLengthLimit)) || DEFAULT_CONFIGURATION.textLengthLimit,
             uiErrorSelectors: effectiveUiSelectors,
             webhookEnabled,

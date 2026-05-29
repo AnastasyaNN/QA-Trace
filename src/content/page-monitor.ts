@@ -1,13 +1,14 @@
-import {ErrorLog} from "../lib/types";
+import {ErrorLog, NetworkRequestLog} from "../lib/types";
 import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {TextUtils} from "../lib/text";
 import {Messaging} from "../lib/messaging";
 
-export class ErrorDetector {
-    private static instance: ErrorDetector
+export class PageMonitor {
+    private static instance: PageMonitor
     private consoleTrackingEnabled = false
     private networkTrackingEnabled = false
+    private fullNetworkTrackingEnabled = false
     private uiObservers: MutationObserver[] = []
     private pageHooksInjected = false
     private pageMessageListenerAdded = false
@@ -16,10 +17,10 @@ export class ErrorDetector {
     private activeUiToastAnchors: WeakMap<HTMLElement, number> = new WeakMap()
     private readonly toastLifetimeMs = 6400
 
-    static getInstance(): ErrorDetector {
-        if (!ErrorDetector.instance)
-            ErrorDetector.instance = new ErrorDetector()
-        return ErrorDetector.instance
+    static getInstance(): PageMonitor {
+        if (!PageMonitor.instance)
+            PageMonitor.instance = new PageMonitor()
+        return PageMonitor.instance
     }
 
     async setupConsoleErrorTracking() {
@@ -34,6 +35,14 @@ export class ErrorDetector {
         if (this.networkTrackingEnabled)
             return
         this.networkTrackingEnabled = true
+        await this.ensurePageHooksInjected()
+        await this.ensurePageMessageListener()
+    }
+
+    async setupFullNetworkTracking() {
+        if (this.fullNetworkTrackingEnabled)
+            return
+        this.fullNetworkTrackingEnabled = true
         await this.ensurePageHooksInjected()
         await this.ensurePageMessageListener()
     }
@@ -107,6 +116,16 @@ export class ErrorDetector {
         })
     }
 
+    private async recordNetworkRequest(request: Omit<NetworkRequestLog, 'timestamp' | 'tabInfo'>): Promise<void> {
+        await Messaging.safeSendMessage({
+            type: 'NETWORK_REQUEST_DETECTED',
+            data: {
+                ...request,
+                timestamp: Date.now()
+            }
+        })
+    }
+
     private async ensurePageMessageListener() {
         if (this.pageMessageListenerAdded)
             return
@@ -130,6 +149,16 @@ export class ErrorDetector {
                 void this.recordError({
                     type: 'network',
                     message: payload.message,
+                    status: payload.status,
+                    method: payload.method,
+                    urlRequested: payload.urlRequested,
+                    requestHeaders: payload.requestHeaders,
+                    requestBody: payload.requestBody,
+                    responseHeaders: payload.responseHeaders,
+                    responseBody: payload.responseBody
+                })
+            } else if (kind === 'network-request') {
+                void this.recordNetworkRequest({
                     status: payload.status,
                     method: payload.method,
                     urlRequested: payload.urlRequested,
@@ -168,7 +197,8 @@ export class ErrorDetector {
                     source: 'qa-trace-init',
                     token: this.pageMessageToken,
                     stripUrlQuery,
-                    stripOrigin
+                    stripOrigin,
+                    trackAllNetwork: this.fullNetworkTrackingEnabled
                 }, targetOrigin)
                 script.remove()
             }

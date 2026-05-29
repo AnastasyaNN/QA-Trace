@@ -31,6 +31,10 @@
                         <input class="checkbox-input skip-errors-checkbox" type="checkbox">
                         <span data-i18n-key="config_do_not_monitor_errors_for_URL">Don't monitor errors for the URL</span>
                     </label>
+                    <label class="checkbox-item checkbox-label">
+                        <input class="checkbox-input monitor-network-requests-checkbox" type="checkbox">
+                        <span data-i18n-key="config_monitor_network_for_URL">Track all network requests for this URL</span>
+                    </label>
                 </div>
             </div>
             <button type="button" id="addUrl"
@@ -242,6 +246,14 @@
                    data-i18n-key="config_errors_limit">Errors Limit</label>
             <input class="input" type="number"
                    id="errorsLimit" placeholder="50" min="1" step="10">
+        </div>
+
+        <div class="form-group">
+            <label class="label"
+                   for="networkRequestsLimit"
+                   data-i18n-key="config_network_requests_limit">Network Requests Limit</label>
+            <input class="input" type="number"
+                   id="networkRequestsLimit" placeholder="20" min="1" step="5">
         </div>
 
         <div class="form-group">

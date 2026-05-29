@@ -1,4 +1,4 @@
-import {ErrorLog, UserAction} from "../lib/types";
+import {ErrorLog, UserAction, NetworkRequestLog} from "../lib/types";
 import {TrackedTab} from "./popup-tab-scope";
 import {PopupFormat} from "./popup-format";
 import {TextUtils} from "../lib/text.ts";
@@ -107,6 +107,65 @@ export class PopupRenderer {
             actionItem.appendChild(actionMessage)
             actionItem.appendChild(actionTime)
             fragment.appendChild(actionItem)
+        })
+
+        return fragment
+    }
+
+    static buildRecentNetworkRequests(
+        recentRequests: NetworkRequestLog[],
+        noRequestsMessage: string,
+        copyLabel: string
+    ): DocumentFragment {
+        const fragment = document.createDocumentFragment()
+
+        if (recentRequests.length === 0) {
+            const empty = document.createElement('div')
+            empty.className = 'empty-state'
+            empty.textContent = noRequestsMessage
+            fragment.appendChild(empty)
+            return fragment
+        }
+
+        recentRequests.forEach((request, idx) => {
+            const requestItem = document.createElement('div')
+            requestItem.className = 'network-request-item'
+
+            const head = document.createElement('div')
+            head.className = 'network-request-item-head'
+
+            const info = document.createElement('div')
+
+            const requestType = document.createElement('div')
+            requestType.className = 'network-request-type'
+            requestType.textContent = `${request.method || 'GET'} ${request.status ?? ''}`.trim()
+
+            const requestUrl = document.createElement('div')
+            requestUrl.className = 'network-request-url'
+            requestUrl.textContent = TextUtils.truncateText(request.urlRequested || '')
+
+            const requestTime = document.createElement('div')
+            requestTime.className = 'network-request-time'
+            requestTime.textContent = PopupFormat.formatTime(request.timestamp)
+
+            info.appendChild(requestType)
+            info.appendChild(requestUrl)
+            info.appendChild(requestTime)
+
+            const actions = document.createElement('div')
+            actions.className = 'network-request-item-actions'
+
+            const btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'btn btn-secondary btn-inline btn-copy-network-request'
+            btn.dataset.requestIndex = String(idx)
+            btn.textContent = copyLabel
+            actions.appendChild(btn)
+
+            head.appendChild(info)
+            head.appendChild(actions)
+            requestItem.appendChild(head)
+            fragment.appendChild(requestItem)
         })
 
         return fragment

@@ -32,7 +32,13 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 - Shows in-page toast when issues appear, and stores them for later report generation.
 - For UI errors, attempts to capture a screenshot and attach it to the error record.
 
-### 3) Smart Scope Controls Before Generation
+### 3) Network Request Tracking (Optional, Per URL)
+- Enable **Track all network requests** for a specific allowed origin to record every `fetch`/`XHR` call, not just failures.
+- Captures method, URL, status, request/response headers, and bodies — with the same sensitive-data redaction used for network errors.
+- Stored separately from errors, with a configurable limit (default 20 most recent requests).
+- The popup shows the most recent requests below Recent Errors; copy any single request as JSON, or **Download all** stored requests as a `.txt` file for attaching to tickets.
+
+### 4) Smart Scope Controls Before Generation
 - Choose mode:
   - **Steps to Reproduce for Ticket**
   - **Document Steps**
@@ -42,7 +48,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 - Mark expected errors to exclude from ticket prompts.
 - Add custom "unexpected behavior" even when technical errors were not captured.
 
-### 4) Integration Outputs
+### 5) Integration Outputs
 - Generate prompt and copy manually.
 - Send prompt directly to configured LLM (if LLM integration is enabled).
 - Trigger external webhook pipeline (if webhook integration is enabled).
@@ -120,9 +126,19 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 
 **Value:** Fits existing QA/dev workflows and external pipelines without changing test habits.
 
+### 8. Inspecting API Traffic Behind a Defect
+**Scenario:** A UI bug looks like it stems from bad/missing API data, and you need the actual requests to share with developers.
+
+**How to use:**
+1. Enable **Track all network requests** for the origin under test in Configuration.
+2. Reproduce the flow.
+3. Open the popup, review the recent requests below Recent Errors, and copy a specific one as JSON — or **Download all** to attach the full traffic log to the ticket.
+
+**Value:** Gives developers the real request/response context (with sensitive data redacted) instead of a vague "the data looked wrong."
+
 ## Recommended QA Workflow
 
-1. Configure allowed test origins, monitoring types, and URL redaction settings.
+1. Configure allowed test origins, monitoring types, optional full network tracking, and URL redaction settings.
 2. Run exploratory session normally.
 3. Open popup to quickly verify action/error counts.
 4. Choose output mode based on target artifact (ticket/document/full report).

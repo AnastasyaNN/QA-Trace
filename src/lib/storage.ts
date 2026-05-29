@@ -1,4 +1,4 @@
-import {StorageData, UserAction, ErrorLog, TabInfo, UiErrorScreenshot, NetworkErrorPayload} from "./types";
+import {StorageData, UserAction, ErrorLog, TabInfo, UiErrorScreenshot, NetworkErrorPayload, NetworkRequestLog} from "./types";
 import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "./integrations";
 import {SavedResponse} from "../popup/popup-saved-response.ts";
@@ -7,6 +7,7 @@ const AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES = 5
 const DEFAULT_STORAGE: StorageData = {
     userActions: [],
     errors: [],
+    networkRequests: [],
     uiErrorScreenshots: [],
     networkErrorPayloads: []
 }
@@ -20,6 +21,7 @@ export class StorageManager {
         return {
             userActions: data.userActions || [],
             errors: data.errors || [],
+            networkRequests: data.networkRequests || [],
             uiErrorScreenshots: data.uiErrorScreenshots || [],
             networkErrorPayloads: data.networkErrorPayloads || []
         }
@@ -118,6 +120,21 @@ export class StorageManager {
         })
     }
 
+    static async addNetworkRequest(request: Omit<NetworkRequestLog, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
+        await this.enqueueWrite(async () => {
+            const storage = await this.getStorage()
+            const configuration = await ExtensionConfigurationManager.getConfiguration()
+
+            storage.networkRequests.unshift({
+                ...request,
+                tabInfo: currentTabInfo
+            })
+            storage.networkRequests = storage.networkRequests.slice(0, configuration.networkRequestsLimit)
+
+            await this.setStorage(storage)
+        })
+    }
+
     static async addUiErrorScreenshotAndAttach(errorId: string, screenshot: UiErrorScreenshot): Promise<void> {
         await this.enqueueWrite(async () => {
             const storage = await this.getStorage()
@@ -142,6 +159,7 @@ export class StorageManager {
         storage.userActions = storage.userActions.filter(action => action.timestamp > twelveHoursAgo)
 
         storage.errors = storage.errors.filter(error => error.timestamp > twelveHoursAgo)
+        storage.networkRequests = storage.networkRequests.filter(request => request.timestamp > twelveHoursAgo)
         storage.uiErrorScreenshots = storage.uiErrorScreenshots.filter(item => item.timestamp > twelveHoursAgo)
 
         storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter(
