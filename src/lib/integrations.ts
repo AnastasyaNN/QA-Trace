@@ -21,7 +21,7 @@ export const DEFAULT_CONFIGURATION: ExtensionConfiguration = {
     },
     userActionsLimit: 1000,
     errorsLimit: 50,
-    networkRequestsLimit: 20,
+    networkRequestsLimit: 150,
     textLengthLimit: 500,
     webhookEnabled: false,
     webhook: {

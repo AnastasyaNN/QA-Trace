@@ -253,7 +253,7 @@
                    for="networkRequestsLimit"
                    data-i18n-key="config_network_requests_limit">Network Requests Limit</label>
             <input class="input" type="number"
-                   id="networkRequestsLimit" placeholder="20" min="1" step="5">
+                   id="networkRequestsLimit" placeholder="150" min="1" step="5">
         </div>
 
         <div class="form-group">
@@ -268,17 +268,17 @@
         <div class="form-group">
             <div class="checkbox-item">
                 <input class="checkbox-input" type="checkbox" id="redactUrlQueryParams" checked>
-                <label class="checkbox-label" for="redactUrlQueryParams" data-i18n-key="config_redact_url_query">Strip query strings and hash from stored URLs</label>
+                <label class="checkbox-label" for="redactUrlQueryParams" data-i18n-key="config_redact_url_query">Strip query strings from stored URLs</label>
             </div>
-            <p class="description" data-i18n-key="config_redact_url_query_desc">When enabled, tab URLs, open/reload actions, and network error request URLs are stored as origin + path only (no ?query or #fragment). Reduces risk of saving session tokens in telemetry.</p>
+            <p class="description" data-i18n-key="config_redact_url_query_desc">When enabled, tab URLs, open/reload actions, and network error request URLs are stored without the ?query. Hash route paths (#/page) are kept, but any query or credentials inside the fragment are removed. Reduces risk of saving session tokens in telemetry.</p>
         </div>
 
         <div class="form-group">
             <div class="checkbox-item">
                 <input class="checkbox-input" type="checkbox" id="redactUrlOrigin" checked>
-                <label class="checkbox-label" for="redactUrlOrigin" data-i18n-key="config_redact_url_origin">Strip origin (protocol and host) from stored URLs</label>
+                <label class="checkbox-label" for="redactUrlOrigin" data-i18n-key="config_redact_url_origin">Strip origin (protocol and host) from prompts</label>
             </div>
-            <p class="description" data-i18n-key="config_redact_url_origin_desc">When enabled, URLs are stored as path only (e.g. /dashboard instead of https://example.com/dashboard). Hides domain names from stored data.</p>
+            <p class="description" data-i18n-key="config_redact_url_origin_desc">When enabled, the protocol and host are removed from tab and action URLs in generated prompts (e.g. /dashboard instead of https://example.com/dashboard).</p>
         </div>
 
         <div class="navigation">

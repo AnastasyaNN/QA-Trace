@@ -136,7 +136,7 @@ header h1 {
 
 .stats {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
     margin-bottom: 25px;
 }
@@ -172,6 +172,10 @@ header h1 {
 
 .stat-card-errors {
     border: 1px solid var(--danger-border);
+}
+
+.stat-card-network-requests {
+    border: 1px solid var(--warning-border);
 }
 
 .recent-actions,

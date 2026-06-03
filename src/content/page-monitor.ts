@@ -139,13 +139,13 @@ export class PageMonitor {
             if (!kind || !payload)
                 return
 
-            if (kind === 'console') {
+            if (kind === 'console' && this.consoleTrackingEnabled) {
                 void this.recordError({
                     type: 'console',
                     message: payload.message,
                     stack: payload.stack
                 })
-            } else if (kind === 'network') {
+            } else if (kind === 'network' && this.networkTrackingEnabled) {
                 void this.recordError({
                     type: 'network',
                     message: payload.message,
@@ -186,7 +186,6 @@ export class PageMonitor {
         try {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
             const stripUrlQuery = !!configuration.redactUrlQueryParams
-            const stripOrigin = !!configuration.redactUrlOrigin
 
             const script = document.createElement('script')
             script.src = hooksUrl
@@ -197,7 +196,6 @@ export class PageMonitor {
                     source: 'qa-trace-init',
                     token: this.pageMessageToken,
                     stripUrlQuery,
-                    stripOrigin,
                     trackAllNetwork: this.fullNetworkTrackingEnabled
                 }, targetOrigin)
                 script.remove()

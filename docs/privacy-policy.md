@@ -22,7 +22,7 @@ QA Trace does **not** collect data on pages outside your configured Allowed URLs
 
 QA Trace applies automatic redaction before storing data:
 
-- **URL query strings and hash fragments** are stripped by default to prevent accidental storage of tokens or session identifiers.
+- **URL query strings** are stripped by default to prevent accidental storage of tokens or session identifiers. Hash route paths are kept so the page stays identifiable, but any query or credentials inside the fragment are removed.
 - **Sensitive HTTP headers** (Authorization, Cookie, X-API-Key, and other token-bearing headers) are removed from stored network error and tracked-request data.
 - **Sensitive body fields** (password, token, api_key, session, and similar) are replaced with `[REDACTED]`.
 

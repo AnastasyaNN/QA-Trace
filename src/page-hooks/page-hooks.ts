@@ -68,7 +68,6 @@ class QaTracePageHooks {
 
     private qaTraceToken: string | null = null
     private shouldStripUrlQuery = true
-    private shouldStripOrigin = true
     private trackAllNetwork = false
 
     private readonly originalFetch: typeof window.fetch
@@ -106,7 +105,6 @@ class QaTracePageHooks {
             return
         this.qaTraceToken = event.data.token
         this.shouldStripUrlQuery = event.data.stripUrlQuery
-        this.shouldStripOrigin = event.data.stripOrigin
         this.trackAllNetwork = event.data.trackAllNetwork
     }
 
@@ -125,8 +123,10 @@ class QaTracePageHooks {
         })
     }
 
+    // Strips query/hash only and KEEPS the origin: captured network URLs must keep their host so
+    // the API endpoint stays shareable. Origin redaction happens later, at prompt/webhook egress.
     private stripRequestUrlForTelemetry(raw: string | null | undefined): string {
-        if (!this.shouldStripUrlQuery && !this.shouldStripOrigin)
+        if (!this.shouldStripUrlQuery)
             return raw == null
                 ? ''
                 : String(raw)
@@ -140,22 +140,12 @@ class QaTracePageHooks {
                 ? window.location.href
                 : undefined
             const u = new URL(s, base)
-            const path = u.pathname || '/'
-            if (this.shouldStripOrigin)
-                return this.shouldStripUrlQuery ? path : path + u.search + u.hash
             if (u.protocol === 'http:' || u.protocol === 'https:')
-                return u.origin + path
+                return u.origin + (u.pathname || '/')
             return u.origin + (u.pathname || '')
         } catch {
-            let result = s
-            if (this.shouldStripUrlQuery) {
-                result = (result.split('#')[0] || '').split('?')[0] || ''
-            }
-            if (this.shouldStripOrigin) {
-                result = result.replace(/^https?:\/\/[^/]*/, '')
-                result = result || '/'
-            }
-            return result
+            const noHash = s.split('#')[0] || ''
+            return noHash.split('?')[0] || ''
         }
     }
 
@@ -240,12 +230,26 @@ class QaTracePageHooks {
         const text = this.truncateBody(value)
         if (!text)
             return ''
+        let out: string
         try {
-            const parsed: unknown = JSON.parse(text)
-            return this.truncateBody(JSON.stringify(this.redactParsedJson(parsed)))
+            out = JSON.stringify(this.redactParsedJson(JSON.parse(text)))
         } catch {
-            return text
+            // Non-JSON bodies (form-encoded, text/plain)
+            out = this.redactKeyValueBody(text)
         }
+        return this.truncateBody(this.redactTokenPatterns(out))
+    }
+
+    private redactKeyValueBody(text: string): string {
+        const keys = QaTracePageHooks.SENSITIVE_BODY_PATTERNS.join('|')
+        const re = new RegExp(`([\\w.\\-\\[\\]]*(?:${keys})[\\w.\\-\\[\\]]*\\s*[=:]\\s*)([^&\\s;"']+)`, 'gi')
+        return text.replace(re, (_match, prefix) => `${prefix}[REDACTED]`)
+    }
+
+    private redactTokenPatterns(text: string): string {
+        return text
+            .replace(/eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+/g, '[REDACTED]')
+            .replace(/\bBearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer [REDACTED]')
     }
 
     private sanitizeHeadersObject(headersObj: Record<string, unknown>): Record<string, string> {
@@ -322,6 +326,40 @@ class QaTracePageHooks {
         }
     }
 
+    private readXhrResponseBody(xhr: XMLHttpRequest): string {
+        try {
+            const type = xhr.responseType
+            if (type === '' || type === 'text')
+                return this.redactBodyText(xhr.responseText || '')
+            if (type === 'json')
+                return this.redactBodyText(JSON.stringify(xhr.response))
+            return ''
+        } catch {
+            return ''
+        }
+    }
+
+    private parseRawResponseHeaders(raw: string): Record<string, string> {
+        const result: Record<string, string> = {}
+        raw.split('\n').forEach((line) => {
+            const idx = line.indexOf(':')
+            if (idx <= 0)
+                return
+            const key = line.slice(0, idx).trim()
+            const value = line.slice(idx + 1).trim()
+            if (!this.isSensitiveHeader(key))
+                result[key] = value
+        })
+        return result
+    }
+
+    private emitNetworkEvent(isError: boolean, shouldRecordRequest: boolean, errorMessage: string, payload: NetworkRequestPayload): void {
+        if (isError)
+            this.post('network', {message: errorMessage, ...payload})
+        if (shouldRecordRequest)
+            this.post('network-request', payload)
+    }
+
     private async patchedFetch(...args: Parameters<typeof fetch>): Promise<Response> {
         const input = args[0]
         const init = args[1] || {}
@@ -339,24 +377,16 @@ class QaTracePageHooks {
             if (!isError && !shouldRecordRequest)
                 return response
 
-            const responseHeaders = this.headersToObject(response.headers)
-            const responseBody = await this.readResponseBodySafe(response)
             const payload: NetworkRequestPayload = {
                 status: response.status,
                 method: requestMethod,
                 urlRequested: requestUrl,
                 requestHeaders,
                 requestBody,
-                responseHeaders,
-                responseBody
+                responseHeaders: this.headersToObject(response.headers),
+                responseBody: await this.readResponseBodySafe(response)
             }
-            if (isError)
-                this.post('network', {
-                    message: 'HTTP ' + response.status + ' ' + response.statusText,
-                    ...payload
-                })
-            if (shouldRecordRequest)
-                this.post('network-request', payload)
+            this.emitNetworkEvent(isError, shouldRecordRequest, 'HTTP ' + response.status + ' ' + response.statusText, payload)
             return response
         } catch (error) {
             this.post('network', {
@@ -418,34 +448,18 @@ class QaTracePageHooks {
                 const shouldRecordRequest = self.trackAllNetwork && this.status !== 0
                 if (!isError && !shouldRecordRequest)
                     return
-                const responseHeaders: Record<string, string> = {}
-                const rawHeaders = this.getAllResponseHeaders?.() || ''
-                rawHeaders.split('\n').forEach((line) => {
-                    const idx = line.indexOf(':')
-                    if (idx <= 0)
-                        return
-                    const key = line.slice(0, idx).trim()
-                    const value = line.slice(idx + 1).trim()
-                    if (!self.isSensitiveHeader(key))
-                        responseHeaders[key] = value
-                })
                 const xhrUrlLoaded = self.stripRequestUrlForTelemetry(this._qaUrl || '')
+                const method = this._qaMethod || 'GET'
                 const payload: NetworkRequestPayload = {
                     status: this.status,
-                    method: this._qaMethod || 'GET',
+                    method,
                     urlRequested: xhrUrlLoaded,
                     requestHeaders: this._qaRequestHeaders || {},
                     requestBody: this._qaRequestBody || '',
-                    responseHeaders,
-                    responseBody: self.redactBodyText(this.responseText || '')
+                    responseHeaders: self.parseRawResponseHeaders(this.getAllResponseHeaders?.() || ''),
+                    responseBody: self.readXhrResponseBody(this)
                 }
-                if (isError)
-                    self.post('network', {
-                        message: 'XHR ' + (this._qaMethod || 'GET') + ' ' + xhrUrlLoaded + ' failed with status ' + this.status,
-                        ...payload
-                    })
-                if (shouldRecordRequest)
-                    self.post('network-request', payload)
+                self.emitNetworkEvent(isError, shouldRecordRequest, 'XHR ' + method + ' ' + xhrUrlLoaded + ' failed with status ' + this.status, payload)
             })
             return originalXhrSend.call(this, body)
         }

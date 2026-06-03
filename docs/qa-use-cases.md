@@ -35,7 +35,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 ### 3) Network Request Tracking (Optional, Per URL)
 - Enable **Track all network requests** for a specific allowed origin to record every `fetch`/`XHR` call, not just failures.
 - Captures method, URL, status, request/response headers, and bodies — with the same sensitive-data redaction used for network errors.
-- Stored separately from errors, with a configurable limit (default 20 most recent requests).
+- Stored separately from errors, with a configurable limit (default 150 most recent requests).
 - The popup shows the most recent requests below Recent Errors; copy any single request as JSON, or **Download all** stored requests as a `.txt` file for attaching to tickets.
 
 ### 4) Smart Scope Controls Before Generation

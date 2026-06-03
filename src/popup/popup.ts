@@ -127,8 +127,25 @@ class PopupManager {
             ))
         }
 
+        this.renderNetworkRequests()
+
+        void SavedResponse.renderLatestResponse(this.popupContext)
+    }
+
+    private renderNetworkRequests(): void {
+        if (!this.popupContext.storageData)
+            return
+
         const networkTrackingEnabled = !!this.popupContext.configuration?.allNetworkRequestsUrls?.length
         const networkRequests = this.popupContext.storageData.networkRequests
+
+        const networkRequestsStatCard = PopupDOM.getHtmlElement('networkRequestsStatCard')
+        if (networkRequestsStatCard)
+            networkRequestsStatCard.style.display = networkTrackingEnabled ? '' : 'none'
+
+        const networkRequestsCount = PopupDOM.getHtmlElement('networkRequestsCount')
+        if (networkRequestsCount)
+            networkRequestsCount.textContent = networkRequests.length.toString()
 
         const networkRequestsSection = PopupDOM.getHtmlElement('recentNetworkRequestsSection')
         if (networkRequestsSection)
@@ -146,8 +163,6 @@ class PopupManager {
                 browser.i18n.getMessage('popup_error_copy')
             ))
         }
-
-        void SavedResponse.renderLatestResponse(this.popupContext)
     }
 
     private async clearData(): Promise<void> {

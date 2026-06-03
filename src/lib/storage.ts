@@ -4,6 +4,7 @@ import {ExtensionConfigurationManager} from "./integrations";
 import {SavedResponse} from "../popup/popup-saved-response.ts";
 
 const AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES = 5
+const NETWORK_REQUESTS_KEY = 'networkRequests'
 const DEFAULT_STORAGE: StorageData = {
     userActions: [],
     errors: [],
@@ -13,22 +14,34 @@ const DEFAULT_STORAGE: StorageData = {
 }
 
 export class StorageManager {
-    private static writeQueue: Promise<void> = Promise.resolve()
+    private static writeQueues: Record<'main' | 'network', Promise<void>> = {
+        main: Promise.resolve(),
+        network: Promise.resolve()
+    }
 
     static async getStorage(): Promise<StorageData> {
-        const result: {[key: string]: any} = await browser.storage.local.get(['storageData'])
-        const data = result.storageData || DEFAULT_STORAGE
+        const result: {[key: string]: any} = await browser.storage.local.get(['storageData', NETWORK_REQUESTS_KEY])
+        const data = result.storageData || {}
         return {
             userActions: data.userActions || [],
             errors: data.errors || [],
-            networkRequests: data.networkRequests || [],
+            networkRequests: result[NETWORK_REQUESTS_KEY] ?? data.networkRequests ?? [],
             uiErrorScreenshots: data.uiErrorScreenshots || [],
             networkErrorPayloads: data.networkErrorPayloads || []
         }
     }
 
     static async setStorage(data: StorageData): Promise<void> {
-        await browser.storage.local.set({ storageData: data })
+        await browser.storage.local.set({ storageData: {...data, networkRequests: []} })
+    }
+
+    private static async getNetworkRequests(): Promise<NetworkRequestLog[]> {
+        const result: {[key: string]: any} = await browser.storage.local.get([NETWORK_REQUESTS_KEY])
+        return result[NETWORK_REQUESTS_KEY] || []
+    }
+
+    private static async setNetworkRequests(requests: NetworkRequestLog[]): Promise<void> {
+        await browser.storage.local.set({ [NETWORK_REQUESTS_KEY]: requests })
     }
 
     static async addUserAction(action: Omit<UserAction, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
@@ -122,17 +135,16 @@ export class StorageManager {
 
     static async addNetworkRequest(request: Omit<NetworkRequestLog, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
         await this.enqueueWrite(async () => {
-            const storage = await this.getStorage()
             const configuration = await ExtensionConfigurationManager.getConfiguration()
+            const networkRequests = await this.getNetworkRequests()
 
-            storage.networkRequests.unshift({
+            networkRequests.unshift({
                 ...request,
                 tabInfo: currentTabInfo
             })
-            storage.networkRequests = storage.networkRequests.slice(0, configuration.networkRequestsLimit)
 
-            await this.setStorage(storage)
-        })
+            await this.setNetworkRequests(networkRequests.slice(0, configuration.networkRequestsLimit))
+        }, 'network')
     }
 
     static async addUiErrorScreenshotAndAttach(errorId: string, screenshot: UiErrorScreenshot): Promise<void> {
@@ -149,7 +161,10 @@ export class StorageManager {
     }
 
     static async clearData(): Promise<void> {
-        await this.setStorage(DEFAULT_STORAGE)
+        await browser.storage.local.set({
+            storageData: {...DEFAULT_STORAGE, networkRequests: []},
+            [NETWORK_REQUESTS_KEY]: []
+        })
     }
 
     static async cleanupOldData(): Promise<void> {
@@ -169,11 +184,12 @@ export class StorageManager {
 
         this.reconcileDependentStorage(storage)
         await this.setStorage(storage)
+        await this.setNetworkRequests(storage.networkRequests)
     }
 
-    private static enqueueWrite(task: () => Promise<void>): Promise<void> {
-        const nextTask = this.writeQueue.then(task)
-        this.writeQueue = nextTask.catch(() => undefined)
+    private static enqueueWrite(task: () => Promise<void>, queue: 'main' | 'network' = 'main'): Promise<void> {
+        const nextTask = this.writeQueues[queue].then(task)
+        this.writeQueues[queue] = nextTask.catch(() => undefined)
         return nextTask
     }
 

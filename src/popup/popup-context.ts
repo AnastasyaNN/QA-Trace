@@ -39,6 +39,7 @@ type PopupElementId = 'clearData' | 'configure' | 'getPrompt' | 'errorsList'
     | 'latestResponseSection' | 'latestResponseSummary' | 'latestResponseDescription'
     | 'copyLatestSummary' | 'copyLatestDescription'
     | 'recentNetworkRequestsSection' | 'networkRequestsList' | 'downloadNetworkRequests'
+    | 'networkRequestsStatCard' | 'networkRequestsCount'
     | 'extVersion'
 
 export class PopupDOM {

@@ -10,9 +10,11 @@ import MessageSender = Runtime.MessageSender;
 
 const MAX_TEXT_FIELD_LENGTH = 5000;
 
-const ERROR_BURST_WINDOW_MS = 60_000;
+const BURST_WINDOW_MS = 60_000;
 const ERROR_BURST_MAX = 120;
+const NETWORK_REQUEST_BURST_MAX = 600;
 const errorBurstByTab = new Map<string, { count: number; resetAt: number }>();
+const networkRequestBurstByTab = new Map<string, { count: number; resetAt: number }>();
 
 // Tab ids for which we already recorded `open_tab` (first navigation to an allowed origin).
 const openTabLoggedForTabId = new Set<number>();
@@ -58,7 +60,7 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
             title: tab.title
         },
         !!configuration.redactUrlQueryParams,
-        !!configuration.redactUrlOrigin
+        false
     )
     await StorageManager.addUserAction({
         type: 'open_tab',
@@ -69,16 +71,16 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
     }, tabInfo)
 }
 
-function allowErrorBurst(tabId: number | undefined): boolean {
+function allowBurst(buckets: Map<string, { count: number; resetAt: number }>, tabId: number | undefined, max: number): boolean {
     const key = String(tabId ?? 'none')
     const now = Date.now()
-    let bucket = errorBurstByTab.get(key)
+    let bucket = buckets.get(key)
     if (!bucket || now > bucket.resetAt) {
-        bucket = {count: 1, resetAt: now + ERROR_BURST_WINDOW_MS};
-        errorBurstByTab.set(key, bucket)
+        bucket = {count: 1, resetAt: now + BURST_WINDOW_MS}
+        buckets.set(key, bucket)
         return true
     }
-    if (bucket.count >= ERROR_BURST_MAX)
+    if (bucket.count >= max)
         return false
     bucket.count += 1
     return true
@@ -147,11 +149,11 @@ function truncateHeadersRecord(input: unknown): Record<string, string> | undefin
         : undefined
 }
 
-function sanitizeNetworkFields(input: any, redactUrlQuery: boolean, redactOrigin: boolean) {
+function sanitizeNetworkFields(input: any, redactUrlQuery: boolean) {
     let urlRequested: string | undefined
     if (input.urlRequested) {
         let u = String(input.urlRequested)
-        u = UrlPrivacy.redactUrlIfEnabled(u, redactUrlQuery, redactOrigin) ?? u
+        u = UrlPrivacy.redactUrlIfEnabled(u, redactUrlQuery, false) ?? u
         urlRequested = truncateField(u, 2000)
     }
     return {
@@ -173,7 +175,7 @@ function sanitizeNetworkFields(input: any, redactUrlQuery: boolean, redactOrigin
     }
 }
 
-function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boolean): Omit<ErrorLog, "tabInfo"> | null {
+function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "tabInfo"> | null {
     const timestamp = Number(input.timestamp)
     if (!input || typeof input !== 'object' || !isValidErrorType(input.type)) {
         return null
@@ -190,11 +192,11 @@ function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boo
         stack: input.stack
             ? truncateField(input.stack, MAX_TEXT_FIELD_LENGTH)
             : undefined,
-        ...sanitizeNetworkFields(input, redactUrlQuery, redactOrigin)
+        ...sanitizeNetworkFields(input, redactUrlQuery)
     }
 }
 
-function sanitizeNetworkRequest(input: any, redactUrlQuery: boolean, redactOrigin: boolean): Omit<NetworkRequestLog, "tabInfo"> | null {
+function sanitizeNetworkRequest(input: any, redactUrlQuery: boolean): Omit<NetworkRequestLog, "tabInfo"> | null {
     const timestamp = Number(input.timestamp)
     if (!input || typeof input !== 'object')
         return null
@@ -202,7 +204,7 @@ function sanitizeNetworkRequest(input: any, redactUrlQuery: boolean, redactOrigi
         return null
     return {
         timestamp,
-        ...sanitizeNetworkFields(input, redactUrlQuery, redactOrigin)
+        ...sanitizeNetworkFields(input, redactUrlQuery)
     }
 }
 
@@ -213,8 +215,7 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
         return
     const configuration = await ExtensionConfigurationManager.getConfiguration()
     const redactQuery = !!configuration.redactUrlQueryParams
-    const redactOrigin = !!configuration.redactUrlOrigin
-    const tabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled(getTabInfoFromSender(sender), redactQuery, redactOrigin)
+    const tabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled(getTabInfoFromSender(sender), redactQuery, false)
 
     switch (message.type) {
         case 'USER_ACTION':
@@ -225,10 +226,10 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
             break
 
         case 'ERROR_DETECTED':
-            if (!allowErrorBurst(sender.tab?.id))
-                return
-            const error = sanitizeErrorLog(message.data, redactQuery, redactOrigin)
+            const error = sanitizeErrorLog(message.data, redactQuery)
             if (!error)
+                return
+            if (!allowBurst(errorBurstByTab, sender.tab?.id, ERROR_BURST_MAX))
                 return
             await StorageManager.addError(error, tabInfo)
             if (error.type === 'ui' && error.id && sender?.tab?.windowId) {
@@ -237,10 +238,10 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
             break
 
         case 'NETWORK_REQUEST_DETECTED':
-            if (!allowErrorBurst(sender.tab?.id))
-                return
-            const networkRequest = sanitizeNetworkRequest(message.data, redactQuery, redactOrigin)
+            const networkRequest = sanitizeNetworkRequest(message.data, redactQuery)
             if (!networkRequest)
+                return
+            if (!allowBurst(networkRequestBurstByTab, sender.tab?.id, NETWORK_REQUEST_BURST_MAX))
                 return
             await StorageManager.addNetworkRequest(networkRequest, tabInfo)
             break
@@ -278,14 +279,13 @@ browser.webNavigation.onCommitted.addListener((details) => {
             const tab = await browser.tabs.get(details.tabId)
             const configuration = await ExtensionConfigurationManager.getConfiguration()
             const redactQuery = !!configuration.redactUrlQueryParams
-            const redactOrigin = !!configuration.redactUrlOrigin
             const tabInfo: TabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled({
                     id: tab.id,
                     url: tab.url,
                     title: tab.title
                 },
                 redactQuery,
-                redactOrigin
+                false
             )
             await StorageManager.addUserAction({
                 type: 'reload_tab',
