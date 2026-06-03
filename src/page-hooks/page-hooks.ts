@@ -58,6 +58,7 @@ class QaTracePageHooks {
 
     private qaTraceToken: string | null = null
     private shouldStripUrlQuery = true
+    private shouldStripOrigin = true
 
     private readonly originalFetch: typeof window.fetch
     private readonly originalXhrOpen: typeof XMLHttpRequest.prototype.open
@@ -94,6 +95,7 @@ class QaTracePageHooks {
             return
         this.qaTraceToken = event.data.token
         this.shouldStripUrlQuery = event.data.stripUrlQuery
+        this.shouldStripOrigin = event.data.stripOrigin
     }
 
     private readonly onWindowError = (event: ErrorEvent): void => {
@@ -112,7 +114,7 @@ class QaTracePageHooks {
     }
 
     private stripRequestUrlForTelemetry(raw: string | null | undefined): string {
-        if (!this.shouldStripUrlQuery)
+        if (!this.shouldStripUrlQuery && !this.shouldStripOrigin)
             return raw == null
                 ? ''
                 : String(raw)
@@ -126,12 +128,22 @@ class QaTracePageHooks {
                 ? window.location.href
                 : undefined
             const u = new URL(s, base)
+            const path = u.pathname || '/'
+            if (this.shouldStripOrigin)
+                return this.shouldStripUrlQuery ? path : path + u.search + u.hash
             if (u.protocol === 'http:' || u.protocol === 'https:')
-                return u.origin + (u.pathname || '/')
+                return u.origin + path
             return u.origin + (u.pathname || '')
         } catch {
-            const noHash = s.split('#')[0] || ''
-            return noHash.split('?')[0] || ''
+            let result = s
+            if (this.shouldStripUrlQuery) {
+                result = (result.split('#')[0] || '').split('?')[0] || ''
+            }
+            if (this.shouldStripOrigin) {
+                result = result.replace(/^https?:\/\/[^/]*/, '')
+                result = result || '/'
+            }
+            return result
         }
     }
 

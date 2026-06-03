@@ -60,6 +60,7 @@ export class ConfigSave {
         const errorsLimit = (ConfigDOM.getHtmlElement("errorsLimit") as HTMLInputElement).value
         const textLengthLimit = (ConfigDOM.getHtmlElement("textLengthLimit") as HTMLInputElement).value
         const redactUrlQueryParams = ConfigDOM.getHtmlElement('redactUrlQueryParams') as HTMLInputElement
+        const redactUrlOrigin = ConfigDOM.getHtmlElement('redactUrlOrigin') as HTMLInputElement
         const uiErrorSelectors = ConfigValidation.getUiErrorSelectorsFromUI()
         const effectiveUiSelectors = uiErrorSelectors.length > 0
             ? uiErrorSelectors
@@ -93,7 +94,8 @@ export class ConfigSave {
                 username: webhookUsername || '',
                 encryptedPassword: existingConfiguration.webhook?.encryptedPassword
             },
-            redactUrlQueryParams: redactUrlQueryParams?.checked !== false
+            redactUrlQueryParams: !!redactUrlQueryParams?.checked,
+            redactUrlOrigin: !!redactUrlOrigin?.checked
         }
         let configuration = summaryTicketExample && descriptionTicketExample
             ? {

@@ -107,6 +107,7 @@ export interface ExtensionConfiguration {
         encryptedPassword?: EncryptedPassword
     },
     redactUrlQueryParams?: boolean,
+    redactUrlOrigin?: boolean,
     ticketExample?: TicketExample,
     documentationExample?: DocumentationExample
 }

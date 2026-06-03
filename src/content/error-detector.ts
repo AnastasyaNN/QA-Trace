@@ -156,7 +156,8 @@ export class ErrorDetector {
         const hooksUrl = browser.runtime.getURL('src/page-hooks/page-hooks.js')
         try {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
-            const stripUrlQuery = configuration.redactUrlQueryParams !== false
+            const stripUrlQuery = !!configuration.redactUrlQueryParams
+            const stripOrigin = !!configuration.redactUrlOrigin
 
             const script = document.createElement('script')
             script.src = hooksUrl
@@ -166,7 +167,8 @@ export class ErrorDetector {
                 window.postMessage({
                     source: 'qa-trace-init',
                     token: this.pageMessageToken,
-                    stripUrlQuery
+                    stripUrlQuery,
+                    stripOrigin
                 }, targetOrigin)
                 script.remove()
             }
