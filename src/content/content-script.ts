@@ -48,7 +48,7 @@ async function init() {
                 const url = UrlPrivacy.redactUrlIfEnabled(
                     href,
                     !!config.redactUrlQueryParams,
-                    !!config.redactUrlOrigin
+                    false
                 ) ?? href
                 sendResponse({
                     url,

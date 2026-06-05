@@ -58,7 +58,7 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
             title: tab.title
         },
         !!configuration.redactUrlQueryParams,
-        !!configuration.redactUrlOrigin
+        false
     )
     await StorageManager.addUserAction({
         type: 'open_tab',
@@ -147,7 +147,7 @@ function truncateHeadersRecord(input: unknown): Record<string, string> | undefin
         : undefined
 }
 
-function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boolean): Omit<ErrorLog, "tabInfo"> | null {
+function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "tabInfo"> | null {
     const timestamp = Number(input.timestamp)
     if (!input || typeof input !== 'object' || !isValidErrorType(input.type)) {
         return null
@@ -157,7 +157,7 @@ function sanitizeErrorLog(input: any, redactUrlQuery: boolean, redactOrigin: boo
     let urlRequested: string | undefined
     if (input.urlRequested) {
         let u = String(input.urlRequested)
-        u = UrlPrivacy.redactUrlIfEnabled(u, redactUrlQuery, redactOrigin) ?? u
+        u = UrlPrivacy.redactUrlIfEnabled(u, redactUrlQuery, false) ?? u
         urlRequested = truncateField(u, 2000)
     }
     return {
@@ -195,8 +195,7 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
         return
     const configuration = await ExtensionConfigurationManager.getConfiguration()
     const redactQuery = !!configuration.redactUrlQueryParams
-    const redactOrigin = !!configuration.redactUrlOrigin
-    const tabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled(getTabInfoFromSender(sender), redactQuery, redactOrigin)
+    const tabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled(getTabInfoFromSender(sender), redactQuery, false)
 
     switch (message.type) {
         case 'USER_ACTION':
@@ -209,7 +208,7 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
         case 'ERROR_DETECTED':
             if (!allowErrorBurst(sender.tab?.id))
                 return
-            const error = sanitizeErrorLog(message.data, redactQuery, redactOrigin)
+            const error = sanitizeErrorLog(message.data, redactQuery)
             if (!error)
                 return
             await StorageManager.addError(error, tabInfo)
@@ -251,14 +250,13 @@ browser.webNavigation.onCommitted.addListener((details) => {
             const tab = await browser.tabs.get(details.tabId)
             const configuration = await ExtensionConfigurationManager.getConfiguration()
             const redactQuery = !!configuration.redactUrlQueryParams
-            const redactOrigin = !!configuration.redactUrlOrigin
             const tabInfo: TabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled({
                     id: tab.id,
                     url: tab.url,
                     title: tab.title
                 },
                 redactQuery,
-                redactOrigin
+                false
             )
             await StorageManager.addUserAction({
                 type: 'reload_tab',

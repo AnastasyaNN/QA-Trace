@@ -9,14 +9,16 @@ export class FullReportTemplate {
     actions: UserAction[],
     errors: ErrorLog[],
     ticketExample: TicketExample | undefined,
-    promptLocale: LlmPromptLocale
+    promptLocale: LlmPromptLocale,
+    redactOrigin: boolean
 ): string {
-    const errorsForLlm = ErrorPromptUtils.stripErrorsForPrompt(errors)
+    const errorsForLlm = ErrorPromptUtils.stripErrorsForPrompt(errors, redactOrigin)
+    const actionsForLlm = ErrorPromptUtils.stripActionsForPrompt(actions, redactOrigin)
     return promptLocale === "en"
         ? `Analyze the storage and describe what and how was done during test charter:
 
 ${JSON.stringify(errorsForLlm)}
-${JSON.stringify(actions)}
+${JSON.stringify(actionsForLlm)}
 
 Rules for the report:
 - The output should follow the style of Xray exploratory testing reports (https://www.getxray.app/) and keep close to the structures above.
@@ -29,7 +31,7 @@ ${FormatTemplates.buildLanguageOutputPrompt(promptLocale)}
         : `Проанализируй хранилище и опиши, что и как было сделано в ходе сессии исследовательского тестирования:
 
 ${JSON.stringify(errorsForLlm)}
-${JSON.stringify(actions)}
+${JSON.stringify(actionsForLlm)}
 
 Правила для отчёта:
 - Формат вывода должен соответствовать стилю отчётов сессий исследовательского тестирования Xray (https://www.getxray.app/) и быть близким к приведённым выше структурам.

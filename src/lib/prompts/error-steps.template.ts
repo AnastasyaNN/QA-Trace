@@ -9,14 +9,16 @@ export class ErrorStepsTemplate {
     actions: UserAction[],
     errors: ErrorLog[],
     ticketExample: TicketExample | undefined,
-    promptLocale: LlmPromptLocale
+    promptLocale: LlmPromptLocale,
+    redactOrigin: boolean
 ): string {
-    const errorsForLlm = ErrorPromptUtils.stripErrorsForPrompt(errors)
+    const errorsForLlm = ErrorPromptUtils.stripErrorsForPrompt(errors, redactOrigin)
+    const actionsForLlm = ErrorPromptUtils.stripActionsForPrompt(actions, redactOrigin)
     return promptLocale === "en"
         ? `Analyze the storage and describe how to reproduce the following errors:
 
 ${JSON.stringify(errorsForLlm)}
-${JSON.stringify(actions)}
+${JSON.stringify(actionsForLlm)}
 
 ${RequirementsTemplate.buildRequirementsPrompt("steps", promptLocale)}
 
@@ -25,7 +27,7 @@ ${FormatTemplates.buildTicketExamplePrompt(ticketExample, promptLocale)}
         : `Проанализируй хранилище и опиши, как воспроизвести следующие ошибки:
 
 ${JSON.stringify(errorsForLlm)}
-${JSON.stringify(actions)}
+${JSON.stringify(actionsForLlm)}
 
 ${RequirementsTemplate.buildRequirementsPrompt("steps", promptLocale)}
 

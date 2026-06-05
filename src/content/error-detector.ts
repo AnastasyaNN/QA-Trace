@@ -157,7 +157,6 @@ export class ErrorDetector {
         try {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
             const stripUrlQuery = !!configuration.redactUrlQueryParams
-            const stripOrigin = !!configuration.redactUrlOrigin
 
             const script = document.createElement('script')
             script.src = hooksUrl
@@ -167,8 +166,7 @@ export class ErrorDetector {
                 window.postMessage({
                     source: 'qa-trace-init',
                     token: this.pageMessageToken,
-                    stripUrlQuery,
-                    stripOrigin
+                    stripUrlQuery
                 }, targetOrigin)
                 script.remove()
             }

@@ -144,8 +144,8 @@
   "config_do_not_monitor_errors_for_URL": {"message": "Не отслеживать ошибки для этого URL"},
   "config_redact_url_query": {"message": "Не сохранять query и hash для URL"},
   "config_redact_url_query_desc": {"message": "URL вкладок, действия открытия/перезагрузки и URL запросов в сетевых ошибках сохраняются как host + путь."},
-  "config_redact_url_origin": {"message": "Не сохранять origin (протокол и хост) для URL"},
-  "config_redact_url_origin_desc": {"message": "URL сохраняются как путь (например /dashboard вместо https://example.com/dashboard). Скрывает доменные имена из сохранённых данных."},
+  "config_redact_url_origin": {"message": "Убирать origin (протокол и хост) из промтов"},
+  "config_redact_url_origin_desc": {"message": "Протокол и хост убираются из URL вкладок, действий и запросов в сгенерированных промтах (например /dashboard вместо https://example.com/dashboard)."},
   "config_finish": {"message":  "Сохранить"},
 
   "config_enter_llm_key_error": {"message": "Введите ключ или выключите интеграцию с LLM."},
