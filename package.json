@@ -8,7 +8,8 @@
     "build": "tsc && npm run build:chromium && npm run build:firefox",
     "build:chromium": "cross-env TARGET=chrome vite build",
     "build:firefox": "cross-env TARGET=firefox vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.40",
@@ -18,7 +19,8 @@
     "typescript": "^6.0.2",
     "vite": "^8.0.8",
     "vite-plugin-web-extension": "^4.5.1",
-    "npm-check-updates": "^20.0.1"
+    "npm-check-updates": "^20.0.1",
+    "vitest": "^4.1.7"
   },
   "dependencies": {
     "webextension-polyfill": "^0.12.0"

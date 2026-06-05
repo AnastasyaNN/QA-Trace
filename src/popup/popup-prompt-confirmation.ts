@@ -179,10 +179,14 @@ export class PromptConfirmation {
             const request: WebhookRequest = {
                 prompt: finalPrompt,
                 systemPrompt: ctx.generatedSystemPrompt,
-                userActions: ctx.storageData?.userActions,
+                userActions: ErrorPromptUtils.stripActionsForPrompt(
+                    ctx.storageData?.userActions || [],
+                    !!ctx.configuration?.redactUrlOrigin
+                ),
                 errors: ErrorPromptUtils.mergeErrorsForWebhook(
                     ctx.storageData?.errors || [],
-                    ctx.storageData?.networkErrorPayloads || []
+                    ctx.storageData?.networkErrorPayloads || [],
+                    !!ctx.configuration?.redactUrlOrigin
                 ),
                 language: PopupLanguage.getResolvedLanguageCode(ctx.configuration),
                 password: webhookPassword || undefined

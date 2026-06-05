@@ -27,6 +27,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 
 - Tracking runs **only** on origins explicitly added to **Allowed URLs**.
 - URL query strings and hash fragments are stripped before storage by default (prevents storing session tokens).
+- The URL origin (protocol and host) is stripped before data leaves the browser by default — from tab and action URLs, error messages, stacks, headers and bodies in generated prompts and webhook payloads.
 - Sensitive HTTP headers (`Authorization`, `Cookie`, API keys, tokens) are automatically redacted from network error payloads.
 - Sensitive fields in request/response bodies are redacted.
 - API keys and webhook passwords are encrypted with a user-provided passphrase using **AES-256-GCM** with **PBKDF2** key derivation (600,000 iterations). The passphrase is never stored.
@@ -140,6 +141,7 @@ On first install, the extension opens the configuration page. You can reopen it 
 | **Documentation Example** | Example title and steps to guide documentation output |
 | **Limits** | Max stored actions, errors, and text length per field |
 | **URL Redaction** | Strip query strings and hash fragments from stored URLs |
+| **Origin Redaction** | Strip origin (protocol and host) from URLs in generated prompts and webhook payloads |
 
 ## Documentation
 

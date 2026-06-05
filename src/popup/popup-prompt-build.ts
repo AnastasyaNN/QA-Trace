@@ -17,7 +17,8 @@ export class PromptBuilder {
             actions,
             errors,
             configuration.ticketExample,
-            PopupLanguage.getResolvedLanguageCode(configuration)
+            PopupLanguage.getResolvedLanguageCode(configuration),
+            !!configuration.redactUrlOrigin
         );
     }
 
@@ -30,7 +31,8 @@ export class PromptBuilder {
             actions,
             errors,
             configuration.ticketExample,
-            PopupLanguage.getResolvedLanguageCode(configuration)
+            PopupLanguage.getResolvedLanguageCode(configuration),
+            !!configuration.redactUrlOrigin
         );
     }
 
@@ -41,7 +43,8 @@ export class PromptBuilder {
         return DocumentationTemplate.buildDocumentationPrompt(
             actions,
             configuration.documentationExample,
-            PopupLanguage.getResolvedLanguageCode(configuration)
+            PopupLanguage.getResolvedLanguageCode(configuration),
+            !!configuration.redactUrlOrigin
         );
     }
 

@@ -144,8 +144,8 @@
   "config_do_not_monitor_errors_for_URL": {"message": "Don't monitor errors for this URL"},
   "config_redact_url_query": {"message": "Strip query strings and hash from stored URLs"},
   "config_redact_url_query_desc": {"message": "When enabled, tab URLs, open/reload actions, and network request URLs in errors are stored as origin + path only."},
-  "config_redact_url_origin": {"message": "Strip origin (protocol and host) from stored URLs"},
-  "config_redact_url_origin_desc": {"message": "When enabled, URLs are stored as path only (e.g. /dashboard instead of https://example.com/dashboard). Hides domain names from stored data."},
+  "config_redact_url_origin": {"message": "Strip origin (protocol and host) from prompts"},
+  "config_redact_url_origin_desc": {"message": "When enabled, the protocol and host are removed from tab, action URLs and requests in generated prompts (e.g. /dashboard instead of https://example.com/dashboard)."},
   "config_finish": {"message":  "Finish Setup"},
 
   "config_enter_llm_key_error": {"message": "Enter an LLM API key or disable LLM integration."},
