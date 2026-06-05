@@ -1,6 +1,9 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest'
 
-const {store} = vi.hoisted(() => ({store: {} as Record<string, any>}))
+const {store, ctrl} = vi.hoisted(() => ({
+    store: {} as Record<string, any>,
+    ctrl: {quotaBytes: undefined as number | undefined}
+}))
 
 vi.mock('webextension-polyfill', () => ({
     storage: {
@@ -14,6 +17,8 @@ vi.mock('webextension-polyfill', () => ({
                 return out
             },
             set: async (obj: Record<string, any>) => {
+                if (ctrl.quotaBytes != null && JSON.stringify({...store, ...obj}).length > ctrl.quotaBytes)
+                    throw new Error('QuotaExceededError: Resource::kQuotaBytes quota exceeded')
                 Object.assign(store, obj)
             }
         },
@@ -37,6 +42,7 @@ function request(timestamp: number, urlRequested: string) {
 beforeEach(() => {
     for (const k of Object.keys(store))
         delete store[k]
+    ctrl.quotaBytes = undefined
 })
 
 describe('StorageManager network requests', () => {
@@ -102,5 +108,43 @@ describe('StorageManager network requests', () => {
         await StorageManager.cleanupOldData()
         expect(store.networkRequests).toHaveLength(1)
         expect(store.networkRequests[0].urlRequested).toBe('fresh')
+    })
+
+    it('sheds oldest network requests and retries when a write exceeds the storage quota', async () => {
+        await StorageManager.addNetworkRequest(request(0, 'https://h/seed'), tab)
+        ctrl.quotaBytes = JSON.stringify(store.networkRequests).length * 4
+
+        for (let i = 1; i < 20; i++)
+            await StorageManager.addNetworkRequest(request(i, `https://h/${i}`), tab)
+
+        expect(store.networkRequests.length).toBeGreaterThan(0)
+        expect(store.networkRequests.length).toBeLessThan(20)
+        expect(store.networkRequests[0].urlRequested).toBe('https://h/19')
+    })
+
+    it('sheds the network log before the primary errors/actions when the blob write hits quota', async () => {
+        for (let i = 0; i < 40; i++)
+            await StorageManager.addNetworkRequest(request(i, `https://h/${i}`), tab)
+        await StorageManager.addUserAction({type: 'click', element: 'BTN', selector: '#b', timestamp: 1}, tab)
+        await StorageManager.addError({type: 'console', message: 'boom', timestamp: 2}, tab)
+
+        const networkBefore = store.networkRequests.length
+        ctrl.quotaBytes = JSON.stringify(store).length - 1
+
+        await StorageManager.addError({type: 'console', message: 'second', timestamp: 3}, tab)
+
+        expect(store.networkRequests.length).toBeLessThan(networkBefore)
+        expect(store.storageData.errors.length).toBeGreaterThanOrEqual(2)
+        expect(store.storageData.userActions).toHaveLength(1)
+    })
+
+    it('gives up gracefully (no throw) when even a single request cannot fit', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        ctrl.quotaBytes = 1
+
+        await expect(StorageManager.addNetworkRequest(request(1, 'https://h/x'), tab)).resolves.toBeUndefined()
+        expect(store.networkRequests).toBeUndefined()
+        expect(warn).toHaveBeenCalled()
+        warn.mockRestore()
     })
 })

@@ -27,7 +27,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 
 - Optionally records **all** network requests (`fetch` and `XMLHttpRequest`) for a URL — not just failures — by enabling **Track all network requests** per URL.
 - Captures method, URL, status, request/response headers, and bodies, with the same sensitive-data redaction applied to network errors.
-- Stored separately from errors, with a **configurable limit** (default: 20 most recent requests).
+- Stored separately from errors, with a **configurable limit** (default: 150 most recent requests).
 - Shown in the popup below Recent Errors. Each request has a **Copy** button (JSON), and the whole block can be exported with **Download all** as a `.txt` file.
 
 ### Privacy and Security

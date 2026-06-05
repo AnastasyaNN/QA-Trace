@@ -264,6 +264,8 @@ browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 
 browser.tabs.onRemoved.addListener((tabId) => {
     openTabLoggedForTabId.delete(tabId)
+    errorBurstByTab.delete(String(tabId))
+    networkRequestBurstByTab.delete(String(tabId))
 });
 
 browser.webNavigation.onCommitted.addListener((details) => {

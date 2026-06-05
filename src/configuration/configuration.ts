@@ -134,6 +134,7 @@ class ConfigurationPage {
 
         ConfigIntegrations.syncIntegrationSections()
         DynamicFields.toggleUiSelectorsVisibility(configuration.errorMonitoring.ui)
+        DynamicFields.toggleNetworkRequestsLimitVisibility()
         ConfigIntegrations.toggleApiUrl()
     }
 
@@ -160,8 +161,16 @@ class ConfigurationPage {
 
         ConfigDOM.getHtmlElement("urls-container")?.addEventListener('click', (e) => {
             const target = e.target as HTMLElement
-            if (target.classList.contains('btn-remove'))
+            if (target.classList.contains('btn-remove')) {
                 DynamicFields.removeUrlField(target)
+                DynamicFields.toggleNetworkRequestsLimitVisibility()
+            }
+        })
+
+        ConfigDOM.getHtmlElement("urls-container")?.addEventListener('change', (e) => {
+            const target = e.target as HTMLElement
+            if (target.classList.contains('monitor-network-requests-checkbox'))
+                DynamicFields.toggleNetworkRequestsLimitVisibility()
         })
 
         ConfigDOM.getHtmlElement("ui-errors-container")?.addEventListener('click', (e) => {

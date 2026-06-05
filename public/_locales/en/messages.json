@@ -165,6 +165,8 @@
   "config_invalid_url": {"message": "Invalid URL: $1"},
   "config_allowed_url_protocol_error": {"message": "Only http/https URLs are allowed: $1"},
   "config_select_monitoring_type_error": {"message": "Please select at least one error monitoring type"},
-  "config_add_ui_selector_error": {"message": "Please add at least one UI error selector"}
+  "config_add_ui_selector_error": {"message": "Please add at least one UI error selector"},
+  "storage_write_failed": {"message": "Couldn't save tracked data due to a browser storage error. Some actions or errors from this session may be missing."},
+  "storage_quota_dropped": {"message": "Browser storage is full. QA Trace removed the oldest tracked data to keep recording this session."}
 }
 

@@ -10,7 +10,7 @@ export class PageMonitor {
     private networkTrackingEnabled = false
     private fullNetworkTrackingEnabled = false
     private uiObservers: MutationObserver[] = []
-    private pageHooksInjected = false
+    private pageHooksReady?: Promise<void>
     private pageMessageListenerAdded = false
     private readonly pageMessageToken = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
     private toastContainer: HTMLElement | null = null
@@ -27,7 +27,7 @@ export class PageMonitor {
         if (this.consoleTrackingEnabled)
             return
         this.consoleTrackingEnabled = true
-        await this.ensurePageHooksInjected()
+        await this.syncPageHooksConfig()
         await this.ensurePageMessageListener()
     }
 
@@ -35,7 +35,7 @@ export class PageMonitor {
         if (this.networkTrackingEnabled)
             return
         this.networkTrackingEnabled = true
-        await this.ensurePageHooksInjected()
+        await this.syncPageHooksConfig()
         await this.ensurePageMessageListener()
     }
 
@@ -43,7 +43,7 @@ export class PageMonitor {
         if (this.fullNetworkTrackingEnabled)
             return
         this.fullNetworkTrackingEnabled = true
-        await this.ensurePageHooksInjected()
+        await this.syncPageHooksConfig()
         await this.ensurePageMessageListener()
     }
 
@@ -157,7 +157,7 @@ export class PageMonitor {
                     responseHeaders: payload.responseHeaders,
                     responseBody: payload.responseBody
                 })
-            } else if (kind === 'network-request') {
+            } else if (kind === 'network-request' && this.fullNetworkTrackingEnabled) {
                 void this.recordNetworkRequest({
                     status: payload.status,
                     method: payload.method,
@@ -174,40 +174,50 @@ export class PageMonitor {
 
 
     /**
-     * Injects page-hooks.js from the extension origin (CSP-safe on strict pages),
-     * then sends runtime init data over window.postMessage.
+     * Injects page-hooks.ts from the extension origin (CSP-safe on strict pages) exactly once.
+     * Resolves once the script has loaded (or failed) so config can be posted to a live listener.
      */
-    private async ensurePageHooksInjected(): Promise<void> {
-        if (this.pageHooksInjected)
-            return
-        this.pageHooksInjected = true
+    private ensurePageHooksInjected(): Promise<void> {
+        if (this.pageHooksReady)
+            return this.pageHooksReady
+        this.pageHooksReady = new Promise<void>((resolve) => {
+            try {
+                const script = document.createElement('script')
+                script.src = browser.runtime.getURL('src/page-hooks/page-hooks.js')
+                script.async = true
+                script.onload = () => {
+                    script.remove()
+                    resolve()
+                }
+                script.onerror = () => {
+                    console.warn('QA Trace: failed to inject page hooks script')
+                    script.remove()
+                    resolve()
+                }
+                const parent = document.head || document.documentElement
+                parent.appendChild(script)
+            } catch (error) {
+                console.warn('QA Trace: failed to initialize page hooks script', error)
+                this.pageHooksReady = undefined
+                resolve()
+            }
+        })
+        return this.pageHooksReady
+    }
 
-        const hooksUrl = browser.runtime.getURL('src/page-hooks/page-hooks.js')
+    // Re-sends the current runtime flags to the page hooks
+    private async syncPageHooksConfig(): Promise<void> {
+        await this.ensurePageHooksInjected()
         try {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
-            const stripUrlQuery = !!configuration.redactUrlQueryParams
-
-            const script = document.createElement('script')
-            script.src = hooksUrl
-            script.async = true
-            script.onload = () => {
-                const targetOrigin = window.location.origin || '*'
-                window.postMessage({
-                    source: 'qa-trace-init',
-                    token: this.pageMessageToken,
-                    stripUrlQuery,
-                    trackAllNetwork: this.fullNetworkTrackingEnabled
-                }, targetOrigin)
-                script.remove()
-            }
-            script.onerror = () => {
-                console.warn('QA Trace: failed to inject page hooks script')
-                script.remove()
-            }
-            (document.head || document.documentElement).appendChild(script)
+            window.postMessage({
+                source: 'qa-trace-init',
+                token: this.pageMessageToken,
+                stripUrlQuery: !!configuration.redactUrlQueryParams,
+                trackAllNetwork: this.fullNetworkTrackingEnabled
+            }, window.location.origin || '*')
         } catch (error) {
-            this.pageHooksInjected = false
-            console.warn('QA Trace: failed to initialize page hooks script', error)
+            console.warn('QA Trace: failed to sync page hooks config', error)
         }
     }
 

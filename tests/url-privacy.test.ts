@@ -12,6 +12,15 @@ describe('UrlPrivacy.stripOriginFromText', () => {
             .toBe('see /dashboard now')
     })
 
+    it("returns '/' for a field that is nothing but a path-less origin (mirrors stripOriginFromUrl)", () => {
+        expect(UrlPrivacy.stripOriginFromText('https://example.com')).toBe('/')
+        expect(UrlPrivacy.stripOriginFromText('https://example.com:8443')).toBe('/')
+    })
+
+    it('leaves an empty string empty', () => {
+        expect(UrlPrivacy.stripOriginFromText('')).toBe('')
+    })
+
     it('strips embedded credentials on http URLs', () => {
         expect(UrlPrivacy.stripOriginFromText('https://user:pass@host:443/p?q=1#h'))
             .toBe('/p?q=1#h')
@@ -107,7 +116,6 @@ describe('UrlPrivacy.redactUrlIfEnabled', () => {
     })
 })
 
-// Exercises the private stripUrlQueryAndHashForStorage via the query-redaction-only path.
 describe('UrlPrivacy.redactUrlIfEnabled — hash-routed SPAs (stripUrlQueryAndHashForStorage)', () => {
 it('preserves a hash route while dropping the query string', () => {
         expect(UrlPrivacy.redactUrlIfEnabled('http://example.com:8080/?x=1#/dashboard/items', true, false))

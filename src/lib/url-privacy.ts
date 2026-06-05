@@ -38,7 +38,9 @@ export class UrlPrivacy {
     static stripOriginFromText(text: string | undefined | null): string | undefined {
         if (text == null)
             return undefined
-        return String(text).replace(EMBEDDED_ORIGIN, '')
+        const input = String(text)
+        const stripped = input.replace(EMBEDDED_ORIGIN, '')
+        return stripped === '' && input !== '' ? '/' : stripped
     }
 
     // Whole-URL fields (urlRequested, tabInfo.url)

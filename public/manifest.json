@@ -21,7 +21,8 @@
     "tabs",
     "webNavigation",
     "alarms",
-    "clipboardWrite"
+    "clipboardWrite",
+    "notifications"
   ],
 
   "{{chrome}}.host_permissions": [

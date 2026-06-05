@@ -85,6 +85,15 @@ export class DynamicFields {
             selectorItem.remove()
     }
 
+    static toggleNetworkRequestsLimitVisibility(): void {
+        const group = ConfigDOM.getHtmlElement("networkRequestsLimitGroup")
+        if (!group)
+            return
+        const anyEnabled = Array.from(document.querySelectorAll('.monitor-network-requests-checkbox'))
+            .some(checkbox => (checkbox as HTMLInputElement).checked)
+        group.style.display = anyEnabled ? 'block' : 'none'
+    }
+
     static toggleUiSelectorsVisibility(enabled: boolean): void {
         const section = ConfigDOM.getHtmlElement("uiErrorsSection")
         const addButton = ConfigDOM.getHtmlElement("addUiError") as HTMLButtonElement

@@ -65,10 +65,21 @@ class QaTracePageHooks {
         'refresh_token',
         'session'
     ];
+    private static readonly BINARY_CONTENT_TYPE =
+        /^(?:image|audio|video|font)\/|^application\/(?:pdf|zip|gzip|x-gzip|x-bzip2|x-tar|x-7z-compressed|x-rar-compressed|wasm|x-protobuf|vnd\.(?:ms-|openxmlformats|oasis\.opendocument))/i
+    private static readonly MAX_RESPONSE_CHARS = 12_000
+    private static readonly SENSITIVE_BODY_KEY_VALUE_RE = new RegExp(
+        `([\\w.\\-\\[\\]]*(?:${QaTracePageHooks.SENSITIVE_BODY_PATTERNS.join('|')})[\\w.\\-\\[\\]]*\\s*[=:]\\s*)([^&\\s;"']+)`,
+        'gi'
+    )
+
+    private static readonly MAX_PENDING_EVENTS = 250
 
     private qaTraceToken: string | null = null
+    private initialized = false
     private shouldStripUrlQuery = true
     private trackAllNetwork = false
+    private pending: { kind: PostKind, payload: ConsolePayload | NetworkPayload | NetworkRequestPayload }[] = []
 
     private readonly originalFetch: typeof window.fetch
     private readonly originalXhrOpen: typeof XMLHttpRequest.prototype.open
@@ -106,6 +117,20 @@ class QaTracePageHooks {
         this.qaTraceToken = event.data.token
         this.shouldStripUrlQuery = event.data.stripUrlQuery
         this.trackAllNetwork = event.data.trackAllNetwork
+        this.initialized = true
+        this.flushPending()
+    }
+
+    // Hooks intercept requests before the content script delivers the token/flags, so events captured
+    // during page load are buffered and replayed here
+    private flushPending(): void {
+        const buffered = this.pending
+        this.pending = []
+        buffered.forEach(({kind, payload}) => {
+            if (kind === 'network-request' && !this.trackAllNetwork)
+                return
+            this.sendNow(kind, payload)
+        })
     }
 
     private readonly onWindowError = (event: ErrorEvent): void => {
@@ -177,6 +202,16 @@ class QaTracePageHooks {
     }
 
     private post(kind: PostKind, payload: ConsolePayload | NetworkPayload | NetworkRequestPayload): void {
+        if (!this.initialized) {
+            if (this.pending.length >= QaTracePageHooks.MAX_PENDING_EVENTS)
+                this.pending.shift()
+            this.pending.push({kind, payload})
+            return
+        }
+        this.sendNow(kind, payload)
+    }
+
+    private sendNow(kind: PostKind, payload: ConsolePayload | NetworkPayload | NetworkRequestPayload): void {
         if (!this.qaTraceToken)
             return
         const targetOrigin = typeof window !== 'undefined' && window.location
@@ -217,12 +252,12 @@ class QaTracePageHooks {
         return redacted
     }
 
-    private truncateBody(value: string | null | undefined, max = 12000): string {
+    private truncateBody(value: string | null | undefined): string {
         if (value == null)
             return ''
         const str = String(value)
-        return str.length > max
-            ? str.slice(0, max)
+        return str.length > QaTracePageHooks.MAX_RESPONSE_CHARS
+            ? str.slice(0, QaTracePageHooks.MAX_RESPONSE_CHARS)
             : str
     }
 
@@ -241,9 +276,7 @@ class QaTracePageHooks {
     }
 
     private redactKeyValueBody(text: string): string {
-        const keys = QaTracePageHooks.SENSITIVE_BODY_PATTERNS.join('|')
-        const re = new RegExp(`([\\w.\\-\\[\\]]*(?:${keys})[\\w.\\-\\[\\]]*\\s*[=:]\\s*)([^&\\s;"']+)`, 'gi')
-        return text.replace(re, (_match, prefix) => `${prefix}[REDACTED]`)
+        return text.replace(QaTracePageHooks.SENSITIVE_BODY_KEY_VALUE_RE, (_match, prefix) => `${prefix}[REDACTED]`)
     }
 
     private redactTokenPatterns(text: string): string {
@@ -316,18 +349,49 @@ class QaTracePageHooks {
         }
     }
 
+    // Skips only clearly-binary bodies (media/fonts/archives); absent/unknown/octet-stream types
+    // are treated as readable so mislabeled textual bodies are still captured.
+    private isBinaryContentType(contentType: string | null | undefined): boolean {
+        return !!contentType && QaTracePageHooks.BINARY_CONTENT_TYPE.test(contentType)
+    }
+
     private async readResponseBodySafe(response: Response): Promise<string> {
         try {
-            const cloned = response.clone()
-            const text = await cloned.text()
+            if (this.isBinaryContentType(response.headers.get('content-type')))
+                return ''
+            const text = await this.readCappedText(response.clone())
             return this.redactBodyText(text)
         } catch {
             return ''
         }
     }
 
+    // Reads at most MAX_RESPONSE_CHARS from the (cloned) response, then cancels so we never
+    // buffer a large/streaming body just to keep the first MAX_RESPONSE_CHARS
+    private async readCappedText(response: Response): Promise<string> {
+        const body = response.body
+        if (!body)
+            return await response.text()
+        const reader = body.getReader()
+        const decoder = new TextDecoder()
+        let out = ''
+        try {
+            while (out.length < QaTracePageHooks.MAX_RESPONSE_CHARS) {
+                const {done, value} = await reader.read()
+                if (done)
+                    break
+                out += decoder.decode(value, {stream: true})
+            }
+        } finally {
+            void reader.cancel()
+        }
+        return out
+    }
+
     private readXhrResponseBody(xhr: XMLHttpRequest): string {
         try {
+            if (this.isBinaryContentType(xhr.getResponseHeader('content-type')))
+                return ''
             const type = xhr.responseType
             if (type === '' || type === 'text')
                 return this.redactBodyText(xhr.responseText || '')
@@ -373,7 +437,7 @@ class QaTracePageHooks {
         try {
             const response = await this.originalFetch(...args)
             const isError = !response.ok && response.status !== 0
-            const shouldRecordRequest = this.trackAllNetwork && response.status !== 0
+            const shouldRecordRequest = (this.trackAllNetwork || !this.initialized) && response.status !== 0
             if (!isError && !shouldRecordRequest)
                 return response
 
@@ -445,7 +509,7 @@ class QaTracePageHooks {
             })
             this.addEventListener('load', () => {
                 const isError = this.status >= 400
-                const shouldRecordRequest = self.trackAllNetwork && this.status !== 0
+                const shouldRecordRequest = (self.trackAllNetwork || !self.initialized) && this.status !== 0
                 if (!isError && !shouldRecordRequest)
                     return
                 const xhrUrlLoaded = self.stripRequestUrlForTelemetry(this._qaUrl || '')

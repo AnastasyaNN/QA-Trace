@@ -32,7 +32,8 @@ export class StorageManager {
     }
 
     static async setStorage(data: StorageData): Promise<void> {
-        await browser.storage.local.set({ storageData: {...data, networkRequests: []} })
+        const blob: StorageData = {...data, networkRequests: []}
+        await this.persist(() => ({storageData: blob}), () => this.shedStorageData(blob))
     }
 
     private static async getNetworkRequests(): Promise<NetworkRequestLog[]> {
@@ -41,7 +42,14 @@ export class StorageManager {
     }
 
     private static async setNetworkRequests(requests: NetworkRequestLog[]): Promise<void> {
-        await browser.storage.local.set({ [NETWORK_REQUESTS_KEY]: requests })
+        let current = requests
+        await this.persist(() => ({[NETWORK_REQUESTS_KEY]: current}), () => {
+            const next = this.halve(current)
+            if (!next)
+                return false
+            current = next
+            return true
+        })
     }
 
     static async addUserAction(action: Omit<UserAction, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
@@ -161,36 +169,133 @@ export class StorageManager {
     }
 
     static async clearData(): Promise<void> {
-        await browser.storage.local.set({
-            storageData: {...DEFAULT_STORAGE, networkRequests: []},
-            [NETWORK_REQUESTS_KEY]: []
+        await this.enqueueAcrossQueues(async () => {
+            await browser.storage.local.set({
+                storageData: {...DEFAULT_STORAGE, networkRequests: []},
+                [NETWORK_REQUESTS_KEY]: []
+            })
         })
     }
 
     static async cleanupOldData(): Promise<void> {
-        const storage = await this.getStorage()
         const twelveHoursAgo = Date.now() - (12 * 60 * 60 * 1000)
+        const isFresh = (timestamp: number) => timestamp > twelveHoursAgo
 
-        storage.userActions = storage.userActions.filter(action => action.timestamp > twelveHoursAgo)
+        await this.enqueueWrite(async () => {
+            const storage = await this.getStorage()
+            storage.userActions = storage.userActions.filter(action => isFresh(action.timestamp))
+            storage.errors = storage.errors.filter(error => isFresh(error.timestamp))
+            storage.uiErrorScreenshots = storage.uiErrorScreenshots.filter(item => isFresh(item.timestamp))
+            storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter(p => isFresh(p.timestamp))
+            await SavedResponse.clearSavedLLMResponse(twelveHoursAgo)
 
-        storage.errors = storage.errors.filter(error => error.timestamp > twelveHoursAgo)
-        storage.networkRequests = storage.networkRequests.filter(request => request.timestamp > twelveHoursAgo)
-        storage.uiErrorScreenshots = storage.uiErrorScreenshots.filter(item => item.timestamp > twelveHoursAgo)
+            this.reconcileDependentStorage(storage)
+            await this.setStorage(storage)
+        }, 'main')
 
-        storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter(
-            (p) => p.timestamp > twelveHoursAgo
-        )
-        await SavedResponse.clearSavedLLMResponse(twelveHoursAgo)
-
-        this.reconcileDependentStorage(storage)
-        await this.setStorage(storage)
-        await this.setNetworkRequests(storage.networkRequests)
+        await this.enqueueWrite(async () => {
+            const requests = await this.getNetworkRequests()
+            await this.setNetworkRequests(requests.filter(request => isFresh(request.timestamp)))
+        }, 'network')
     }
 
-    private static enqueueWrite(task: () => Promise<void>, queue: 'main' | 'network' = 'main'): Promise<void> {
+    private static enqueueWrite<T>(task: () => Promise<T>, queue: 'main' | 'network' = 'main'): Promise<T> {
         const nextTask = this.writeQueues[queue].then(task)
-        this.writeQueues[queue] = nextTask.catch(() => undefined)
+        this.writeQueues[queue] = nextTask.then(() => undefined, () => undefined)
         return nextTask
+    }
+
+    private static enqueueAcrossQueues(task: () => Promise<void>): Promise<void> {
+        return this.enqueueWrite(() => this.enqueueWrite(task, 'network'), 'main')
+    }
+
+    // Writes are best-effort: on a storage-quota rejection we shed the oldest/heaviest data and
+    // retry until it fits. `shed` returns false when nothing more can be dropped.
+    private static async persist(buildEntries: () => Record<string, unknown>, shed: () => boolean | Promise<boolean>): Promise<void> {
+        while (true) {
+            try {
+                await browser.storage.local.set(buildEntries())
+                return
+            } catch (error) {
+                if (!this.isQuotaExceeded(error)) {
+                    console.warn('QA Trace: storage write failed', error)
+                    this.notifyUser('storage_write_failed')
+                    return
+                }
+                if (!(await shed())) {
+                    console.warn('QA Trace: storage quota exceeded; oldest data was dropped')
+                    this.notifyUser('storage_quota_dropped')
+                    return
+                }
+            }
+        }
+    }
+
+    private static isQuotaExceeded(error: unknown): boolean {
+        // Some browsers reject with a name-only DOMException (empty message), so check both.
+        const name = (error as {name?: unknown})?.name
+        const message = error instanceof Error ? error.message : String(error)
+        return /quota/i.test(String(name)) || /quota/i.test(message)
+    }
+
+    // Single shed policy: keep the larger (newer) half — items are unshifted to the front, so slicing
+    // from 0 retains the most recent and never drops the last survivor. Returns null when the list is
+    // too small to shrink, signalling shed loops to stop.
+    private static halve<T>(items: T[]): T[] | null {
+        return items.length > 1
+            ? items.slice(0, Math.ceil(items.length / 2))
+            : null
+    }
+
+    private static notifyUser(messageKey: string): void {
+        try {
+            void browser.notifications?.create({
+                type: 'basic',
+                iconUrl: browser.runtime.getURL('icons/128.png'),
+                title: browser.i18n.getMessage('extName'),
+                message: browser.i18n.getMessage(messageKey)
+            })
+        } catch (error) {
+            console.warn('QA Trace: failed to show notification', error)
+        }
+    }
+
+    private static async shedStorageData(data: StorageData): Promise<boolean> {
+        if (data.uiErrorScreenshots.length > 0) {
+            data.uiErrorScreenshots = data.uiErrorScreenshots.slice(0, -1)
+            this.reconcileDependentStorage(data)
+            return true
+        }
+        if (await this.shedNetworkRequests())
+            return true
+        const payloads = this.halve(data.networkErrorPayloads || [])
+        if (payloads) {
+            data.networkErrorPayloads = payloads
+            this.reconcileDependentStorage(data)
+            return true
+        }
+        const errors = this.halve(data.errors)
+        if (errors) {
+            data.errors = errors
+            this.reconcileDependentStorage(data)
+            return true
+        }
+        const userActions = this.halve(data.userActions)
+        if (userActions) {
+            data.userActions = userActions
+            return true
+        }
+        return false
+    }
+
+    private static shedNetworkRequests(): Promise<boolean> {
+        return this.enqueueWrite(async () => {
+            const next = this.halve(await this.getNetworkRequests())
+            if (!next)
+                return false
+            await this.setNetworkRequests(next)
+            return true
+        }, 'network')
     }
 
     private static reconcileDependentStorage(storage: StorageData): void {

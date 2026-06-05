@@ -165,6 +165,8 @@
   "config_invalid_url": {"message": "Некорректный адрес: $1"},
   "config_allowed_url_protocol_error": {"message": "Поддерживаются только http/https адреса: $1"},
   "config_select_monitoring_type_error": {"message": "Выберите хотя бы один тип мониторинга ошибок"},
-  "config_add_ui_selector_error": {"message": "Добавьте хотя бы один селектор для UI-ошибок"}
+  "config_add_ui_selector_error": {"message": "Добавьте хотя бы один селектор для UI-ошибок"},
+  "storage_write_failed": {"message": "Не удалось сохранить отслеживаемые данные из-за ошибки хранилища браузера. Часть действий или ошибок этой сессии может отсутствовать."},
+  "storage_quota_dropped": {"message": "Хранилище браузера переполнено. QA Trace удалил самые старые данные, чтобы продолжить запись сессии."}
 }
 

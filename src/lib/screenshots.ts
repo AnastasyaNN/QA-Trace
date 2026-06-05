@@ -9,7 +9,7 @@ export class ScreenshotUtils {
         windowId: number
     ): Promise<void> {
         try {
-            const imageDataUrl = await browser.tabs.captureVisibleTab(windowId, { format: 'png' })
+            const imageDataUrl = await browser.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 60 })
             const screenshotId = ScreenshotUtils.newUiErrorScreenshotId()
             await StorageManager.addUiErrorScreenshotAndAttach(errorId, {
                 id: screenshotId,
