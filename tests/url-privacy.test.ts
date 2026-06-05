@@ -56,6 +56,34 @@ describe('UrlPrivacy.stripOriginFromText', () => {
         expect(UrlPrivacy.stripOriginFromText('path C:\\Users\\me')).toBe('path C:\\Users\\me')
         expect(UrlPrivacy.stripOriginFromText('this and/or that')).toBe('this and/or that')
     })
+
+    it('strips scheme-less host:port authorities (FQDN and IPv4)', () => {
+        expect(UrlPrivacy.stripOriginFromText('connect ECONNREFUSED db.internal.corp:5432'))
+            .toBe('connect ECONNREFUSED ')
+        expect(UrlPrivacy.stripOriginFromText('Unable to reach cache.redis:6379 now'))
+            .toBe('Unable to reach  now')
+        expect(UrlPrivacy.stripOriginFromText('timeout contacting 10.0.0.5:5432 reached'))
+            .toBe('timeout contacting  reached')
+    })
+
+    it('keeps the path after a scheme-less host:port', () => {
+        expect(UrlPrivacy.stripOriginFromText('GET api.example.com:443/health failed'))
+            .toBe('GET /health failed')
+    })
+
+    it('does not mistake stack frames / versions for a host:port', () => {
+        expect(UrlPrivacy.stripOriginFromText('at bundle.js:128:14 in render'))
+            .toBe('at bundle.js:128:14 in render')
+        expect(UrlPrivacy.stripOriginFromText('see app.js:42 for detail'))
+            .toBe('see app.js:42 for detail')
+        expect(UrlPrivacy.stripOriginFromText('config.yaml:7 invalid')).toBe('config.yaml:7 invalid')
+        expect(UrlPrivacy.stripOriginFromText('ratio 16.9:10 today')).toBe('ratio 16.9:10 today')
+    })
+
+    it('leaves a path-qualified frame alone (host:port not at a token boundary)', () => {
+        expect(UrlPrivacy.stripOriginFromText('stack /app/server.internal:5432 frame'))
+            .toBe('stack /app/server.internal:5432 frame')
+    })
 })
 
 describe('UrlPrivacy.stripOriginFromUrl', () => {

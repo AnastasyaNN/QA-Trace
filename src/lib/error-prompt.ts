@@ -22,8 +22,10 @@ export class ErrorPromptUtils {
             return actions
         return actions.map((action) => {
             const copy = {...action} as Record<string, unknown>
-            if (typeof copy.value === 'string')
-                copy.value = UrlPrivacy.stripOriginFromText(copy.value as string)
+            for (const k of ['value', 'labelText'] as const) {
+                if (typeof copy[k] === 'string')
+                    copy[k] = UrlPrivacy.stripOriginFromText(copy[k] as string)
+            }
             if (action.tabInfo && typeof action.tabInfo.url === 'string')
                 copy.tabInfo = {...action.tabInfo, url: UrlPrivacy.stripOriginFromUrl(action.tabInfo.url)}
             return copy as unknown as UserAction

@@ -36,6 +36,19 @@ describe('ErrorPromptUtils.stripActionsForPrompt', () => {
         expect(action.value).toBe('Open tab — /dashboard')
         expect(action.tabInfo.url).toBe('/dashboard')
     })
+
+    it('strips origin from labelText', () => {
+        const action: UserAction = {
+            type: 'click',
+            element: 'A',
+            selector: 'a.link',
+            timestamp: 1,
+            labelText: 'open https://admin.internal.com:8443/panel',
+            tabInfo: {id: 1, url: 'https://app.internal:8443/x', title: 'App'}
+        }
+        const [stripped] = ErrorPromptUtils.stripActionsForPrompt([action], true)
+        expect(stripped.labelText).toBe('open /panel')
+    })
 })
 
 describe('ErrorPromptUtils.stripErrorsForPrompt', () => {

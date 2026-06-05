@@ -8,6 +8,13 @@ import {TabInfo} from "./types";
 // The authority run `[^\s/"'()<>]+` also covers embedded `user:pass@host:port` credentials.
 const EMBEDDED_ORIGIN = /(?:\b[a-z][a-z0-9+.\-]*:\/\/|(?<=^|[\s"'(<])\/\/)[^\s/"'()<>]+/gi
 
+// A scheme-less `host:port` (e.g. `db.internal.corp:5432`, `10.0.0.5:6379`) still exposes the host.
+// The explicit numeric port is the signal that separates a network authority from ordinary dotted
+// text. To avoid eating stack frames like `app.js:128`, only IPs or multi-label hostnames whose
+// final label is not a source-file extension match, and the token must start at a boundary so
+// path-qualified frames (`/app/server.internal:5432`) are left alone.
+const EMBEDDED_HOST_PORT = /(?<=^|[\s"'(<])(?:\d{1,3}(?:\.\d{1,3}){3}|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?!(?:js|jsx|ts|tsx|mjs|cjs|json|map|css|scss|less|html?|vue|svelte|py|rb|go|rs|php|txt|md|ya?ml|xml|png|jpe?g|gif|svg|wasm|woff2?)\b)[a-z][a-z0-9-]*):\d{1,5}/gi
+
 export class UrlPrivacy {
     static redactUrlIfEnabled(raw: string | undefined | null, redactUrlQuery: boolean, redactOrigin: boolean): string | undefined {
         if (raw == null)
@@ -39,7 +46,7 @@ export class UrlPrivacy {
         if (text == null)
             return undefined
         const input = String(text)
-        const stripped = input.replace(EMBEDDED_ORIGIN, '')
+        const stripped = input.replace(EMBEDDED_ORIGIN, '').replace(EMBEDDED_HOST_PORT, '')
         return stripped === '' && input !== '' ? '/' : stripped
     }
 
