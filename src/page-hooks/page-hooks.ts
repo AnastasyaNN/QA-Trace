@@ -310,7 +310,7 @@ class QaTracePageHooks {
         const requestBody = this.parseRequestBody((init as RequestInit)?.body)
         try {
             const response = await this.originalFetch(...args)
-            if (!response.ok) {
+            if (!response.ok && response.status !== 0) {
                 const responseHeaders = this.headersToObject(response.headers)
                 const responseBody = await this.readResponseBodySafe(response)
                 this.post('network', {
