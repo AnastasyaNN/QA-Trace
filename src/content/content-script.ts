@@ -5,10 +5,16 @@ import {AllowedOrigins} from "../lib/allowed-origins";
 import {UrlPrivacy} from "../lib/url-privacy";
 import * as browser from "webextension-polyfill";
 
-if (document.readyState === 'loading')
-    document.addEventListener('DOMContentLoaded', () => init().catch(console.error))
-else
-    init().catch(console.error)
+// Runs at document_start so page hooks are injected before page scripts fire their first
+// fetch/XHR. Only DOM-dependent setup (the UI-error observer) waits for <body>.
+init().catch(console.error)
+
+function onBodyReady(callback: () => void): void {
+    if (document.body)
+        callback()
+    else
+        document.addEventListener('DOMContentLoaded', () => callback(), {once: true})
+}
 
 async function init() {
     const extensionConfiguration = await ExtensionConfigurationManager.getConfiguration()
@@ -32,7 +38,7 @@ async function init() {
             if (extensionConfiguration.errorMonitoring.network)
                 await pageMonitor.setupNetworkErrorTracking()
             if (extensionConfiguration.errorMonitoring.ui)
-                pageMonitor.setupUIErrorTracking(extensionConfiguration.uiErrorSelectors)
+                onBodyReady(() => pageMonitor.setupUIErrorTracking(extensionConfiguration.uiErrorSelectors))
         }
     }
 

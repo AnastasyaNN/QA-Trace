@@ -25,7 +25,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 
 ### Network Request Tracking
 
-- Optionally records **all** network requests (`fetch` and `XMLHttpRequest`) for a URL — not just failures — by enabling **Track all network requests** per URL.
+- Optionally records all **`fetch` and `XMLHttpRequest`** requests for a URL — not just failures — by enabling **Track all fetch/XHR requests** per URL. Resource loads issued by the browser itself (the document, `<script>`/`<link>`/`<img>`, fonts) are not captured, since they don't go through `fetch`/`XHR`.
 - Captures method, URL, status, request/response headers, and bodies, with the same sensitive-data redaction applied to network errors.
 - Stored separately from errors, with a **configurable limit** (default: 150 most recent requests).
 - Shown in the popup below Recent Errors. Each request has a **Copy** button (JSON), and the whole block can be exported with **Download all** as a `.txt` file.
@@ -140,7 +140,7 @@ On first install, the extension opens the configuration page. You can reopen it 
 
 | Setting | Description |
 |---|---|
-| **Allowed URLs** | Origins where tracking is active (required). Per URL, error monitoring can be disabled and full network request tracking can be enabled |
+| **Allowed URLs** | Origins where tracking is active (required). Per URL, error monitoring can be disabled and full fetch/XHR request tracking can be enabled |
 | **Error Monitoring** | Toggle network, console, and UI error detection |
 | **Language** | Output language for LLM prompts (auto / English / Russian) |
 | **Integrations** | LLM (OpenAI / DeepSeek / custom) or webhook, with encrypted credentials |

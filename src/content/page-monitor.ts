@@ -27,24 +27,24 @@ export class PageMonitor {
         if (this.consoleTrackingEnabled)
             return
         this.consoleTrackingEnabled = true
-        await this.syncPageHooksConfig()
         await this.ensurePageMessageListener()
+        await this.syncPageHooksConfig()
     }
 
     async setupNetworkErrorTracking() {
         if (this.networkTrackingEnabled)
             return
         this.networkTrackingEnabled = true
-        await this.syncPageHooksConfig()
         await this.ensurePageMessageListener()
+        await this.syncPageHooksConfig()
     }
 
     async setupFullNetworkTracking() {
         if (this.fullNetworkTrackingEnabled)
             return
         this.fullNetworkTrackingEnabled = true
-        await this.syncPageHooksConfig()
         await this.ensurePageMessageListener()
+        await this.syncPageHooksConfig()
     }
 
     setupUIErrorTracking(selectors: string[] = ['div[id^="__error"]']) {
@@ -259,6 +259,10 @@ export class PageMonitor {
 
     private ensureToastContainer() {
         if (this.toastContainer)
+            return
+        // Errors can be captured at document_start, before <body> exists; skip the visual
+        // toast in that case (the error itself is still recorded via messaging).
+        if (!document.body)
             return
         const container = document.createElement('div')
         container.className = 'qa-trace-toast-container'

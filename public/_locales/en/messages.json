@@ -147,7 +147,7 @@
   "config_text_length_limit": {"message":  "Text Length"},
   "config_text_length_limit_desc": {"message":  "Maximum characters stored for values, labels and error messages."},
   "config_do_not_monitor_errors_for_URL": {"message": "Don't monitor errors for this URL"},
-  "config_monitor_network_for_URL": {"message": "Track all network requests for this URL"},
+  "config_monitor_network_for_URL": {"message": "Track all fetch/XHR requests for this URL"},
   "config_redact_url_query": {"message": "Strip query strings from stored URLs"},
   "config_redact_url_query_desc": {"message": "When enabled, tab URLs, open/reload actions, and network request URLs in errors are stored without the query. Hash route paths are kept, but query and credentials inside the fragment are removed."},
   "config_redact_url_origin": {"message": "Strip origin (protocol and host) from prompts"},

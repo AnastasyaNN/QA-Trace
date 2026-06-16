@@ -147,7 +147,7 @@
   "config_text_length_limit": {"message":  "Длина текста"},
   "config_text_length_limit_desc": {"message":  "Максимальное количество знаков для значений, меток и сообщений об ошибках."},
   "config_do_not_monitor_errors_for_URL": {"message": "Не отслеживать ошибки для этого URL"},
-  "config_monitor_network_for_URL": {"message": "Записывать все сетевые запросы для этого URL"},
+  "config_monitor_network_for_URL": {"message": "Записывать все fetch/XHR запросы для этого URL"},
   "config_redact_url_query": {"message": "Не сохранять query для URL"},
   "config_redact_url_query_desc": {"message": "URL вкладок, действия открытия/перезагрузки и URL запросов в сетевых ошибках сохраняются без query. Путь hash-маршрута сохраняется, но query и учётные данные внутри фрагмента удаляются."},
   "config_redact_url_origin": {"message": "Убирать origin (протокол и хост) из промтов"},

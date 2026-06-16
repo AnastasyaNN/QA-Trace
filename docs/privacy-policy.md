@@ -13,7 +13,7 @@ When tracking is active on an allowed origin, QA Trace collects:
 - **User actions** — event type (click, input, select, change, tab open/reload), element selector, optional input value, timestamp, tab URL, and tab title.
 - **Console errors** — error message, stack trace, and timestamp.
 - **Network errors** — HTTP method, URL, status code, request/response headers and body, and timestamp.
-- **Network requests** — when **Track all network requests** is enabled for an origin, the same fields (method, URL, status, request/response headers and body, timestamp) are recorded for successful requests as well, not only failures.
+- **Network requests** — when **Track all fetch/XHR requests** is enabled for an origin, the same fields (method, URL, status, request/response headers and body, timestamp) are recorded for successful `fetch`/`XMLHttpRequest` calls as well, not only failures.
 - **UI error screenshots** — a base64-encoded PNG image of the visible tab area captured when a UI error is detected.
 
 QA Trace does **not** collect data on pages outside your configured Allowed URLs list. Password input values are never captured.
