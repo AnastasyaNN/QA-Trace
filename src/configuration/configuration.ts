@@ -1,3 +1,4 @@
+import * as browser from "webextension-polyfill";
 import {ExtensionConfiguration} from "../lib/types";
 import {DEFAULT_CONFIGURATION, ExtensionConfigurationManager} from "../lib/integrations";
 import {I18nUtils} from "../lib/i18n";
@@ -5,6 +6,7 @@ import {ConfigDOM} from "./configuration-dom";
 import {DynamicFields} from "./configuration-dynamic-fields";
 import {ConfigIntegrations} from "./configuration-integrations";
 import {ConfigSave} from "./configuration-save";
+import {MAX_BODY_REDACT_CHARS, MAX_RESPONSE_CHARS} from "../lib/body-redaction.ts";
 
 class ConfigurationPage {
     private existingConfiguration: ExtensionConfiguration = DEFAULT_CONFIGURATION
@@ -65,6 +67,8 @@ class ConfigurationPage {
                 : 'none'
         const redactUrlQueryEl = ConfigDOM.getHtmlElement('redactUrlQueryParams') as HTMLInputElement | null
         const redactUrlOriginEl = ConfigDOM.getHtmlElement('redactUrlOrigin') as HTMLInputElement | null
+        const disableBodyTruncationEl = ConfigDOM.getHtmlElement('disableBodyTruncation') as HTMLInputElement | null
+        const disableBodyTruncationDescEl = ConfigDOM.getHtmlElement('disableBodyTruncationDesc')
 
         const errorsDisabledSet = new Set(configuration.errorsDisabledUrls || [])
         const allNetworkRequestsSet = new Set(configuration.allNetworkRequestsUrls || [])
@@ -125,6 +129,16 @@ class ConfigurationPage {
             redactUrlQueryEl.checked = !!configuration.redactUrlQueryParams
         if (redactUrlOriginEl)
             redactUrlOriginEl.checked = !!configuration.redactUrlOrigin
+        if (disableBodyTruncationEl)
+            disableBodyTruncationEl.checked = !!configuration.disableBodyTruncation
+        if (disableBodyTruncationDescEl)
+            disableBodyTruncationDescEl.textContent = browser.i18n.getMessage(
+                'config_disable_body_truncation_desc',
+                [
+                    String(MAX_RESPONSE_CHARS),
+                    String(MAX_BODY_REDACT_CHARS)
+                ]
+            )
         if (webhookUrlInput)
             webhookUrlInput.value = configuration.webhook?.url || ''
         if (webhookUsernameInput)
@@ -135,6 +149,7 @@ class ConfigurationPage {
         ConfigIntegrations.syncIntegrationSections()
         DynamicFields.toggleUiSelectorsVisibility(configuration.errorMonitoring.ui)
         DynamicFields.toggleNetworkRequestsLimitVisibility()
+        DynamicFields.toggleBodyTruncationVisibility()
         ConfigIntegrations.toggleApiUrl()
     }
 
@@ -145,6 +160,7 @@ class ConfigurationPage {
         const llmType = ConfigDOM.getHtmlElement("llmType") as HTMLSelectElement
         const integrationOptions = ConfigDOM.getHtmlElements("intObjects")
         const monitorUI = ConfigDOM.getHtmlElement("monitorUI") as HTMLInputElement
+        const monitorNetwork = ConfigDOM.getHtmlElement("monitorNetwork") as HTMLInputElement
 
         finishBtn?.addEventListener('click', async () => {
             const saved = await ConfigSave.finishSetup(this.existingConfiguration)
@@ -158,19 +174,23 @@ class ConfigurationPage {
         llmType?.addEventListener('change', () => ConfigIntegrations.handleLLMTypeChange())
         integrationOptions.forEach(input => input.addEventListener('change', () => ConfigIntegrations.syncIntegrationSections()))
         monitorUI?.addEventListener('change', () => DynamicFields.toggleUiSelectorsVisibility(monitorUI.checked))
+        monitorNetwork?.addEventListener('change', () => DynamicFields.toggleBodyTruncationVisibility())
 
         ConfigDOM.getHtmlElement("urls-container")?.addEventListener('click', (e) => {
             const target = e.target as HTMLElement
             if (target.classList.contains('btn-remove')) {
                 DynamicFields.removeUrlField(target)
                 DynamicFields.toggleNetworkRequestsLimitVisibility()
+                DynamicFields.toggleBodyTruncationVisibility()
             }
         })
 
         ConfigDOM.getHtmlElement("urls-container")?.addEventListener('change', (e) => {
             const target = e.target as HTMLElement
-            if (target.classList.contains('monitor-network-requests-checkbox'))
+            if (target.classList.contains('monitor-network-requests-checkbox')) {
                 DynamicFields.toggleNetworkRequestsLimitVisibility()
+                DynamicFields.toggleBodyTruncationVisibility()
+            }
         })
 
         ConfigDOM.getHtmlElement("ui-errors-container")?.addEventListener('click', (e) => {

@@ -7,6 +7,7 @@ export type ConfigElementId =
     | 'languageSelect' | 'summaryTicketExample' | 'descriptionTicketExample'
     | 'titleDocumentationExample' | 'stepsDocumentationExample'
     | 'userActionsLimit' | 'errorsLimit' | 'networkRequestsLimit' | 'networkRequestsLimitGroup' | 'textLengthLimit' | 'redactUrlQueryParams' | 'redactUrlOrigin'
+    | 'disableBodyTruncation' | 'disableBodyTruncationDesc' | 'disableBodyTruncationGroup'
     | 'finishBtn' | 'addUrl' | 'addUiError'
 
 export type ConfigElementsId = 'urls' | 'ui-errors' | 'intObjects'

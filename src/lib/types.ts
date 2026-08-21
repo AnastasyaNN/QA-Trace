@@ -15,44 +15,40 @@ export interface UserAction {
     labelText?: string
 }
 
-export interface ErrorLog {
+export interface NetworkBodies {
+    requestHeaders?: Record<string, string>,
+    requestBody?: string,
+    responseHeaders?: Record<string, string>,
+    responseBody?: string
+}
+
+export interface NetworkExchange extends NetworkBodies {
+    status?: number,
+    method?: string,
+    urlRequested?: string
+}
+
+export interface ErrorLog extends NetworkExchange {
     type: 'console' | 'network' | 'ui' | 'user',
     id?: string,
     message: string,
     timestamp: number,
     tabInfo: TabInfo,
     stack?: string,
-    status?: number,
-    method?: string,
-    urlRequested?: string,
-    requestHeaders?: Record<string, string>,
-    requestBody?: string,
-    responseHeaders?: Record<string, string>,
-    responseBody?: string,
     screenshotId?: string,
     networkPayloadId?: string
 }
 
-export interface NetworkRequestLog {
+export interface NetworkRequestLog extends NetworkExchange {
+    id?: string,
     timestamp: number,
-    tabInfo: TabInfo,
-    status?: number,
-    method?: string,
-    urlRequested?: string,
-    requestHeaders?: Record<string, string>,
-    requestBody?: string,
-    responseHeaders?: Record<string, string>,
-    responseBody?: string
+    tabInfo: TabInfo
 }
 
-export interface NetworkErrorPayload {
+export interface NetworkErrorPayload extends NetworkBodies {
     id: string,
     errorId: string,
-    timestamp: number,
-    requestHeaders?: Record<string, string>,
-    requestBody?: string,
-    responseHeaders?: Record<string, string>,
-    responseBody?: string
+    timestamp: number
 }
 
 export interface UiErrorScreenshot {
@@ -123,6 +119,7 @@ export interface ExtensionConfiguration {
     },
     redactUrlQueryParams?: boolean,
     redactUrlOrigin?: boolean,
+    disableBodyTruncation?: boolean,
     ticketExample?: TicketExample,
     documentationExample?: DocumentationExample
 }

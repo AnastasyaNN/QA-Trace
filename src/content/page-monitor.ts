@@ -3,6 +3,7 @@ import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {TextUtils} from "../lib/text";
 import {Messaging} from "../lib/messaging";
+import {IdUtils} from "../lib/id";
 
 export class PageMonitor {
     private static instance: PageMonitor
@@ -12,7 +13,7 @@ export class PageMonitor {
     private uiObservers: MutationObserver[] = []
     private pageHooksReady?: Promise<void>
     private pageMessageListenerAdded = false
-    private readonly pageMessageToken = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+    private readonly pageMessageToken = IdUtils.generate(10)
     private toastContainer: HTMLElement | null = null
     private activeUiToastAnchors: WeakMap<HTMLElement, number> = new WeakMap()
     private readonly toastLifetimeMs = 6400
@@ -92,7 +93,7 @@ export class PageMonitor {
     }
 
     private async recordError(error: Omit<ErrorLog, 'id' | 'timestamp' | "tabInfo">, uiElement?: HTMLElement): Promise<void> {
-        const errorId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const errorId = IdUtils.generate(6)
         const fullError: Omit<ErrorLog, "tabInfo"> = {
             id: errorId,
             timestamp: Date.now(),
@@ -214,7 +215,8 @@ export class PageMonitor {
                 source: 'qa-trace-init',
                 token: this.pageMessageToken,
                 stripUrlQuery: !!configuration.redactUrlQueryParams,
-                trackAllNetwork: this.fullNetworkTrackingEnabled
+                trackAllNetwork: this.fullNetworkTrackingEnabled,
+                disableBodyTruncation: !!configuration.disableBodyTruncation
             }, window.location.origin || '*')
         } catch (error) {
             console.warn('QA Trace: failed to sync page hooks config', error)

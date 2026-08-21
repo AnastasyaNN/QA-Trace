@@ -23,7 +23,7 @@ export interface PopupContext {
     passphraseModalResolve: ((value: string | null) => void) | null,
 }
 
-type PopupElementId = 'clearData' | 'configure' | 'getPrompt' | 'errorsList'
+export type PopupElementId = 'clearData' | 'configure' | 'getPrompt' | 'errorsList'
     | 'userActionsCount' | 'errorsCount'
     | 'sendToLLM' | 'triggerWebhook' | 'responseSection' | 'responseError' | 'responseSuccess'
     | 'configurationError' | 'responseFields'
@@ -70,6 +70,12 @@ export class PopupDOM {
 
     static getHtmlElement(element: PopupElementId): HTMLElement | null {
         return document.getElementById(element)
+    }
+
+    static toggleVisible(element: PopupElementId, visible: boolean): void {
+        const el = PopupDOM.getHtmlElement(element)
+        if (el)
+            el.style.display = visible ? '' : 'none'
     }
 
     static showConfigureError(message: string): void {

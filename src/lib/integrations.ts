@@ -29,7 +29,8 @@ export const DEFAULT_CONFIGURATION: ExtensionConfiguration = {
         username: '',
     },
     redactUrlQueryParams: true,
-    redactUrlOrigin: true
+    redactUrlOrigin: true,
+    disableBodyTruncation: false
 };
 
 export class ExtensionConfigurationManager {

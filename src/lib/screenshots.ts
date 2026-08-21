@@ -1,36 +1,23 @@
 import * as browser from "webextension-polyfill";
-import {StorageManager} from "./storage";
-import {TabInfo} from "./types";
 
 export class ScreenshotUtils {
-    static async captureAndStoreUiScreenshot(
-        errorId: string,
-        tabInfo: TabInfo,
-        windowId: number
-    ): Promise<void> {
+    static async captureVisibleTab(windowId: number): Promise<string | null> {
         try {
-            const imageDataUrl = await browser.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 60 })
-            const screenshotId = ScreenshotUtils.newUiErrorScreenshotId()
-            await StorageManager.addUiErrorScreenshotAndAttach(errorId, {
-                id: screenshotId,
-                errorId,
-                tabId: tabInfo.id,
-                timestamp: Date.now(),
-                imageDataUrl
-            })
+            return await browser.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 60 })
         } catch (error) {
-            console.warn('Failed to capture UI error screenshot', { errorId, windowId, tabId: tabInfo.id, error })
+            console.warn('Failed to capture UI error screenshot', { windowId, error })
+            return null
         }
     }
 
-    static async copyPngDataUrlToClipboard(dataUrl: string): Promise<void> {
+    static async copyScreenshotToClipboard(dataUrl: string): Promise<void> {
         if (typeof ClipboardItem === 'undefined')
             throw new Error('ClipboardItem not supported')
-        const blob = await ScreenshotUtils.getPngBlobFromDataUrl(dataUrl)
+        const blob = await ScreenshotUtils.toPngBlob(dataUrl)
         await navigator.clipboard.write([new ClipboardItem({'image/png': blob})])
     }
 
-    private static async getPngBlobFromDataUrl(dataUrl: string): Promise<Blob> {
+    private static async toPngBlob(dataUrl: string): Promise<Blob> {
         const sourceBlob = await (await fetch(dataUrl)).blob()
         if (sourceBlob.type === 'image/png')
             return sourceBlob
@@ -52,9 +39,5 @@ export class ScreenshotUtils {
         if (!converted)
             throw new Error('Failed to convert screenshot to png')
         return converted
-    }
-
-    private static newUiErrorScreenshotId(): string {
-        return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     }
 }

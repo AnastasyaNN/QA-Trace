@@ -68,7 +68,7 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
         value: `Open tab — ${tabInfo.url || ''}`,
         selector: '[tab]',
         timestamp: Date.now()
-    }, tabInfo)
+    }, tabInfo, true)
 }
 
 function allowBurst(buckets: Map<string, { count: number; resetAt: number }>, tabId: number | undefined, max: number): boolean {
@@ -116,10 +116,10 @@ function isValidErrorType(value: unknown): value is ErrorLog['type'] {
 }
 
 function sanitizeUserAction(input: any): Omit<UserAction, "tabInfo"> | null {
-    const timestamp = Number(input.timestamp)
     if (!input || typeof input !== 'object' || !isValidActionType(input.type)) {
         return null
     }
+    const timestamp = Number(input.timestamp)
     if (!Number.isFinite(timestamp))
         return null
     return {
@@ -149,13 +149,14 @@ function truncateHeadersRecord(input: unknown): Record<string, string> | undefin
         : undefined
 }
 
-function sanitizeNetworkFields(input: any, redactUrlQuery: boolean) {
+function sanitizeNetworkFields(input: any, redactUrlQuery: boolean, disableBodyTruncation: boolean) {
     let urlRequested: string | undefined
     if (input.urlRequested) {
         let u = String(input.urlRequested)
         u = UrlPrivacy.redactUrlIfEnabled(u, redactUrlQuery, false) ?? u
         urlRequested = truncateField(u, 2000)
     }
+    const bodyMax = disableBodyTruncation ? Infinity : MAX_TEXT_FIELD_LENGTH
     return {
         status: typeof input.status === 'number'
             ? input.status
@@ -166,20 +167,20 @@ function sanitizeNetworkFields(input: any, redactUrlQuery: boolean) {
         urlRequested,
         requestHeaders: truncateHeadersRecord(input.requestHeaders),
         requestBody: input.requestBody
-            ? truncateField(input.requestBody, MAX_TEXT_FIELD_LENGTH)
+            ? truncateField(input.requestBody, bodyMax)
             : undefined,
         responseHeaders: truncateHeadersRecord(input.responseHeaders),
         responseBody: input.responseBody
-            ? truncateField(input.responseBody, MAX_TEXT_FIELD_LENGTH)
+            ? truncateField(input.responseBody, bodyMax)
             : undefined
     }
 }
 
-function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "tabInfo"> | null {
-    const timestamp = Number(input.timestamp)
+function sanitizeErrorLog(input: any, redactUrlQuery: boolean, disableBodyTruncation: boolean): Omit<ErrorLog, "tabInfo"> | null {
     if (!input || typeof input !== 'object' || !isValidErrorType(input.type)) {
         return null
     }
+    const timestamp = Number(input.timestamp)
     if (!Number.isFinite(timestamp))
         return null
     return {
@@ -192,20 +193,54 @@ function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "
         stack: input.stack
             ? truncateField(input.stack, MAX_TEXT_FIELD_LENGTH)
             : undefined,
-        ...sanitizeNetworkFields(input, redactUrlQuery)
+        ...sanitizeNetworkFields(input, redactUrlQuery, disableBodyTruncation)
     }
 }
 
-function sanitizeNetworkRequest(input: any, redactUrlQuery: boolean): Omit<NetworkRequestLog, "tabInfo"> | null {
-    const timestamp = Number(input.timestamp)
+function sanitizeNetworkRequest(input: any, redactUrlQuery: boolean, disableBodyTruncation: boolean): Omit<NetworkRequestLog, "tabInfo"> | null {
     if (!input || typeof input !== 'object')
         return null
+    const timestamp = Number(input.timestamp)
     if (!Number.isFinite(timestamp))
+        return null
+    const fields = sanitizeNetworkFields(input, redactUrlQuery, disableBodyTruncation)
+    if (!fields.urlRequested)
         return null
     return {
         timestamp,
-        ...sanitizeNetworkFields(input, redactUrlQuery)
+        ...fields
     }
+}
+
+async function handleUserAction(message: any, tabInfo: TabInfo): Promise<void> {
+    const userAction = sanitizeUserAction(message.data)
+    if (!userAction)
+        return
+    await StorageManager.addUserAction(userAction, tabInfo)
+}
+
+async function handleErrorDetected(message: any, sender: MessageSender, tabInfo: TabInfo, redactQuery: boolean, disableBodyTruncation: boolean): Promise<void> {
+    if (!allowBurst(errorBurstByTab, sender.tab?.id, ERROR_BURST_MAX))
+        return
+    const error = sanitizeErrorLog(message.data, redactQuery, disableBodyTruncation)
+    if (!error)
+        return
+    const windowId = sender.tab?.windowId
+    // Capture before recording so a short-lived UI error element is still on screen, then store the
+    // error and its screenshot in one atomic write so the screenshot can never be orphaned by the trim.
+    const imageDataUrl = error.type === 'ui' && error.id && windowId != null
+        ? await ScreenshotUtils.captureVisibleTab(windowId)
+        : null
+    await StorageManager.addError(error, tabInfo, imageDataUrl ?? undefined)
+}
+
+async function handleNetworkRequestDetected(message: any, sender: MessageSender, tabInfo: TabInfo, redactQuery: boolean, disableBodyTruncation: boolean): Promise<void> {
+    if (!allowBurst(networkRequestBurstByTab, sender.tab?.id, NETWORK_REQUEST_BURST_MAX))
+        return
+    const networkRequest = sanitizeNetworkRequest(message.data, redactQuery, disableBodyTruncation)
+    if (!networkRequest)
+        return
+    await StorageManager.addNetworkRequest(networkRequest, tabInfo)
 }
 
 browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender) => {
@@ -215,37 +250,19 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
         return
     const configuration = await ExtensionConfigurationManager.getConfiguration()
     const redactQuery = !!configuration.redactUrlQueryParams
+    const disableBodyTruncation = !!configuration.disableBodyTruncation
     const tabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled(getTabInfoFromSender(sender), redactQuery, false)
 
     switch (message.type) {
         case 'USER_ACTION':
-            const userAction = sanitizeUserAction(message.data);
-            if (!userAction)
-                return
-            await StorageManager.addUserAction(userAction, tabInfo);
+            await handleUserAction(message, tabInfo)
             break
-
         case 'ERROR_DETECTED':
-            const error = sanitizeErrorLog(message.data, redactQuery)
-            if (!error)
-                return
-            if (!allowBurst(errorBurstByTab, sender.tab?.id, ERROR_BURST_MAX))
-                return
-            await StorageManager.addError(error, tabInfo)
-            if (error.type === 'ui' && error.id && sender?.tab?.windowId) {
-                await ScreenshotUtils.captureAndStoreUiScreenshot(error.id, tabInfo, sender.tab.windowId);
-            }
+            await handleErrorDetected(message, sender, tabInfo, redactQuery, disableBodyTruncation)
             break
-
         case 'NETWORK_REQUEST_DETECTED':
-            const networkRequest = sanitizeNetworkRequest(message.data, redactQuery)
-            if (!networkRequest)
-                return
-            if (!allowBurst(networkRequestBurstByTab, sender.tab?.id, NETWORK_REQUEST_BURST_MAX))
-                return
-            await StorageManager.addNetworkRequest(networkRequest, tabInfo)
+            await handleNetworkRequestDetected(message, sender, tabInfo, redactQuery, disableBodyTruncation)
             break
-
         case 'CLEAR_DATA':
             await StorageManager.clearData()
             break
@@ -295,7 +312,7 @@ browser.webNavigation.onCommitted.addListener((details) => {
                 value: `Reload tab — ${tabInfo.url || ''}`,
                 selector: '[tab]',
                 timestamp: Date.now()
-            }, tabInfo)
+            }, tabInfo, true)
         } catch {
             // tab may be gone
         }
