@@ -3,6 +3,7 @@ import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {TextUtils} from "../lib/text";
 import {Messaging} from "../lib/messaging";
+import {IdUtils} from "../lib/id";
 
 export class PageMonitor {
     private static instance: PageMonitor
@@ -12,7 +13,7 @@ export class PageMonitor {
     private uiObservers: MutationObserver[] = []
     private pageHooksReady?: Promise<void>
     private pageMessageListenerAdded = false
-    private readonly pageMessageToken = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+    private readonly pageMessageToken = IdUtils.generate(10)
     private toastContainer: HTMLElement | null = null
     private activeUiToastAnchors: WeakMap<HTMLElement, number> = new WeakMap()
     private readonly toastLifetimeMs = 6400
@@ -92,7 +93,7 @@ export class PageMonitor {
     }
 
     private async recordError(error: Omit<ErrorLog, 'id' | 'timestamp' | "tabInfo">, uiElement?: HTMLElement): Promise<void> {
-        const errorId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const errorId = IdUtils.generate(6)
         const fullError: Omit<ErrorLog, "tabInfo"> = {
             id: errorId,
             timestamp: Date.now(),
@@ -177,13 +178,17 @@ export class PageMonitor {
      * Injects page-hooks.ts from the extension origin (CSP-safe on strict pages) exactly once.
      * Resolves once the script has loaded (or failed) so config can be posted to a live listener.
      */
-    private ensurePageHooksInjected(): Promise<void> {
+    private ensurePageHooksInjected(disableBodyTruncation: boolean): Promise<void> {
         if (this.pageHooksReady)
             return this.pageHooksReady
         this.pageHooksReady = new Promise<void>((resolve) => {
             try {
                 const script = document.createElement('script')
-                script.src = browser.runtime.getURL('src/page-hooks/page-hooks.js')
+                // trackAll/disableBodyTruncation in the fragment let the hooks gate capture and set
+                // the body cap at install time, before the async init message arrives.
+                const trackAll = this.fullNetworkTrackingEnabled ? '1' : '0'
+                const noTruncation = disableBodyTruncation ? '1' : '0'
+                script.src = `${browser.runtime.getURL('src/page-hooks/page-hooks.js')}#trackAll=${trackAll}&disableBodyTruncation=${noTruncation}`
                 script.async = true
                 script.onload = () => {
                     script.remove()
@@ -207,16 +212,18 @@ export class PageMonitor {
 
     // Re-sends the current runtime flags to the page hooks
     private async syncPageHooksConfig(): Promise<void> {
-        await this.ensurePageHooksInjected()
         try {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
+            await this.ensurePageHooksInjected(!!configuration.disableBodyTruncation)
             window.postMessage({
                 source: 'qa-trace-init',
                 token: this.pageMessageToken,
                 stripUrlQuery: !!configuration.redactUrlQueryParams,
-                trackAllNetwork: this.fullNetworkTrackingEnabled
+                trackAllNetwork: this.fullNetworkTrackingEnabled,
+                disableBodyTruncation: !!configuration.disableBodyTruncation
             }, window.location.origin || '*')
         } catch (error) {
+            await this.ensurePageHooksInjected(false)
             console.warn('QA Trace: failed to sync page hooks config', error)
         }
     }

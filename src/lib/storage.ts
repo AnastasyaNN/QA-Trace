@@ -1,10 +1,12 @@
 import {StorageData, UserAction, ErrorLog, TabInfo, UiErrorScreenshot, NetworkErrorPayload, NetworkRequestLog} from "./types";
 import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "./integrations";
+import {IdUtils} from "./id";
 import {SavedResponse} from "../popup/popup-saved-response.ts";
 
 const AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES = 5
 const NETWORK_REQUESTS_KEY = 'networkRequests'
+const RETENTION_MS = 12 * 60 * 60 * 1000
 const DEFAULT_STORAGE: StorageData = {
     userActions: [],
     errors: [],
@@ -14,18 +16,18 @@ const DEFAULT_STORAGE: StorageData = {
 }
 
 export class StorageManager {
-    private static writeQueues: Record<'main' | 'network', Promise<void>> = {
-        main: Promise.resolve(),
-        network: Promise.resolve()
-    }
+    private static writeQueues: Record<string, Promise<void>> = {}
+    // Per-store buffers that coalesce bursty appends into one read-modify-write per debounce window.
+    private static batchers: Record<string, {items: any[], pending: Promise<void> | null, flushNow: (() => void) | null}> = {}
+    private static batchDelayMs = 300
 
     static async getStorage(): Promise<StorageData> {
-        const result: {[key: string]: any} = await browser.storage.local.get(['storageData', NETWORK_REQUESTS_KEY])
+        const result: {[key: string]: any} = await browser.storage.local.get(['storageData'])
         const data = result.storageData || {}
         return {
             userActions: data.userActions || [],
             errors: data.errors || [],
-            networkRequests: result[NETWORK_REQUESTS_KEY] ?? data.networkRequests ?? [],
+            networkRequests: [],
             uiErrorScreenshots: data.uiErrorScreenshots || [],
             networkErrorPayloads: data.networkErrorPayloads || []
         }
@@ -33,12 +35,182 @@ export class StorageManager {
 
     static async setStorage(data: StorageData): Promise<void> {
         const blob: StorageData = {...data, networkRequests: []}
-        await this.persist(() => ({storageData: blob}), () => this.shedStorageData(blob))
+        await this.persist(() => ({storageData: blob}), this.makeBlobShedder(blob))
     }
 
-    private static async getNetworkRequests(): Promise<NetworkRequestLog[]> {
-        const result: {[key: string]: any} = await browser.storage.local.get([NETWORK_REQUESTS_KEY])
-        return result[NETWORK_REQUESTS_KEY] || []
+    static async getNetworkRequestById(id: string): Promise<NetworkRequestLog | undefined> {
+        const requests = await this.getNetworkRequests()
+        return requests.find((request) => request.id === id)
+    }
+
+    // Own key, with a read-only fallback to legacy in-blob requests. The blob is read lazily so the
+    // hot path avoids deserializing it. Not migrated on read: a write here would deadlock callers
+    // already running on the 'network' queue.
+    static async getNetworkRequests(): Promise<NetworkRequestLog[]> {
+        const result: {[key: string]: any} = await browser.storage.local.get(NETWORK_REQUESTS_KEY)
+        if (result[NETWORK_REQUESTS_KEY] != null)
+            return result[NETWORK_REQUESTS_KEY]
+        const legacy: {[key: string]: any} = await browser.storage.local.get('storageData')
+        return legacy.storageData?.networkRequests ?? []
+    }
+
+    static async addUserAction(action: Omit<UserAction, "tabInfo">, currentTabInfo: TabInfo, immediate = false): Promise<void> {
+        await this.batchWrite('userActions', 'main', {action, tabInfo: currentTabInfo}, async (batch) => {
+            const storage = await this.getStorage()
+            const configuration = await ExtensionConfigurationManager.getConfiguration()
+
+            let needsReconcile = false
+            for (const {action, tabInfo} of batch) {
+                const firstElement = storage.userActions[0]
+                const isDuplicateOfFirst = !!firstElement &&
+                    firstElement.selector === action.selector &&
+                    firstElement.element === action.element &&
+                    firstElement.tabInfo?.url === tabInfo.url &&
+                    firstElement.tabInfo?.id === tabInfo.id &&
+                    !!action.labelText &&
+                    firstElement.labelText === action.labelText
+                // remove the latest action if it was performed with the same element as current action
+                if (isDuplicateOfFirst)
+                    storage.userActions.shift()
+
+                // todo check/uncheck
+                storage.userActions.unshift({...action, tabInfo})
+
+                if (storage.userActions.length > configuration.userActionsLimit) {
+                    const itemForDeletion = storage.userActions[storage.userActions.length - 1]
+                    const errorsBefore = storage.errors.length
+                    // remove errors occurred before deleted action
+                    storage.errors = storage.errors.filter(error => error.timestamp > itemForDeletion.timestamp)
+                    if (storage.errors.length < errorsBefore)
+                        needsReconcile = true
+                    storage.userActions = storage.userActions.slice(0, configuration.userActionsLimit)
+                }
+            }
+
+            if (needsReconcile)
+                this.reconcileDependentStorage(storage)
+
+            await this.setStorage(storage)
+        }, immediate)
+    }
+
+    static async addError(error: Omit<ErrorLog, "tabInfo">, currentTabInfo: TabInfo, imageDataUrl?: string): Promise<void> {
+        await this.batchWrite('errors', 'main', {error, tabInfo: currentTabInfo, imageDataUrl}, async (batch) => {
+            const storage = await this.getStorage()
+            const configuration = await ExtensionConfigurationManager.getConfiguration()
+
+            let needsReconcile = false
+            for (const {error, tabInfo, imageDataUrl} of batch) {
+                let toStore: Omit<ErrorLog, 'tabInfo'> = {...error}
+                if (error.type === 'network') {
+                    const payloadId = IdUtils.generate()
+                    const errorId = error.id || payloadId
+                    const payload: NetworkErrorPayload = {
+                        id: payloadId,
+                        errorId,
+                        timestamp: error.timestamp,
+                        requestHeaders: error.requestHeaders,
+                        requestBody: error.requestBody,
+                        responseHeaders: error.responseHeaders,
+                        responseBody: error.responseBody
+                    }
+                    storage.networkErrorPayloads = storage.networkErrorPayloads || []
+                    storage.networkErrorPayloads.unshift(payload)
+                    if (storage.networkErrorPayloads.length > AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES) {
+                        storage.networkErrorPayloads = storage.networkErrorPayloads.slice(0, AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES)
+                        needsReconcile = true
+                    }
+
+                    const {
+                        requestHeaders: _rh,
+                        requestBody: _rb,
+                        responseHeaders: _rsh,
+                        responseBody: _rsb,
+                        ...slim
+                    } = toStore
+                    toStore = {
+                        ...slim,
+                        id: errorId,
+                        networkPayloadId: payloadId
+                    }
+                }
+
+                storage.errors.unshift({...toStore, tabInfo})
+
+                if (imageDataUrl && error.type === 'ui' && error.id) {
+                    const screenshot: UiErrorScreenshot = {
+                        id: IdUtils.generate(6),
+                        errorId: error.id,
+                        tabId: tabInfo.id,
+                        timestamp: error.timestamp,
+                        imageDataUrl
+                    }
+                    storage.uiErrorScreenshots.unshift(screenshot)
+                    if (storage.uiErrorScreenshots.length > AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES) {
+                        storage.uiErrorScreenshots = storage.uiErrorScreenshots.slice(0, AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES)
+                        needsReconcile = true
+                    }
+                    storage.errors[0].screenshotId = screenshot.id
+                }
+
+                if (storage.errors.length > configuration.errorsLimit) {
+                    const itemForDeletion = storage.errors[storage.errors.length - 1]
+                    storage.userActions = storage.userActions?.filter(action => action.timestamp > itemForDeletion.timestamp)
+                    storage.errors = storage.errors.slice(0, configuration.errorsLimit)
+                    needsReconcile = true
+                }
+            }
+
+            if (needsReconcile)
+                this.reconcileDependentStorage(storage)
+
+            await this.setStorage(storage)
+        })
+    }
+
+    static async addNetworkRequest(request: Omit<NetworkRequestLog, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
+        const entry: NetworkRequestLog = {id: IdUtils.generate(), ...request, tabInfo: currentTabInfo}
+        await this.batchWrite('networkRequests', 'network', entry, async (batch) => {
+            const configuration = await ExtensionConfigurationManager.getConfiguration()
+            await this.mutateNetworkRequests((networkRequests) => {
+                batch.forEach((item) => networkRequests.unshift(item))
+                return networkRequests.slice(0, configuration.networkRequestsLimit)
+            })
+        })
+    }
+
+    static async clearData(): Promise<void> {
+        // Drop buffered-but-unflushed appends so an in-flight batch cannot write data back after the wipe.
+        Object.values(this.batchers).forEach((batcher) => batcher.items = [])
+        // Route through persist() so a rejected write is reported (notifyUser) instead of becoming an
+        // unhandled rejection in the CLEAR_DATA handler. Nothing to shed when writing empty data.
+        const wipe = () => this.persist(
+            () => ({storageData: {...DEFAULT_STORAGE}, [NETWORK_REQUESTS_KEY]: []}),
+            () => false
+        )
+        await this.enqueueWrite(() => this.enqueueWrite(wipe, 'network'), 'main')
+    }
+
+    static async cleanupOldData(): Promise<void> {
+        const cutoff = Date.now() - RETENTION_MS
+        const isFresh = (timestamp: number) => timestamp > cutoff
+
+        await this.enqueueWrite(async () => {
+            const storage = await this.getStorage()
+            storage.userActions = storage.userActions.filter(action => isFresh(action.timestamp))
+            storage.errors = storage.errors.filter(error => isFresh(error.timestamp))
+            storage.uiErrorScreenshots = storage.uiErrorScreenshots.filter(item => isFresh(item.timestamp))
+            storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter(p => isFresh(p.timestamp))
+            await SavedResponse.clearSavedLLMResponse(cutoff)
+
+            this.reconcileDependentStorage(storage)
+            await this.setStorage(storage)
+        }, 'main')
+
+        await this.enqueueWrite(
+            () => this.mutateNetworkRequests((requests) => requests.filter(request => isFresh(request.timestamp))),
+            'network'
+        )
     }
 
     private static async setNetworkRequests(requests: NetworkRequestLog[]): Promise<void> {
@@ -52,161 +224,47 @@ export class StorageManager {
         })
     }
 
-    static async addUserAction(action: Omit<UserAction, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
-        await this.enqueueWrite(async () => {
-            const storage = await this.getStorage()
-            const configuration = await ExtensionConfigurationManager.getConfiguration()
+    // Read-modify-write of the network log; callers already run inside the 'network' queue.
+    private static async mutateNetworkRequests(mutator: (requests: NetworkRequestLog[]) => NetworkRequestLog[]): Promise<void> {
+        await this.setNetworkRequests(mutator(await this.getNetworkRequests()))
+    }
 
-            const existingIndex = storage.userActions.findIndex(existing =>
-                existing.selector === action.selector &&
-                existing.element === action.element &&
-                existing.tabInfo?.url === currentTabInfo.url &&
-                existing.tabInfo?.id === currentTabInfo.id &&
-                action.labelText &&
-                existing.labelText === action.labelText
-            )
-            // remove the latest action if it was performed with the same element as current action
-            if (existingIndex === 0)
-                storage.userActions.shift()
+    // Buffers item under key and, once per debounce window, drains the whole batch through one
+    // queued read-modify-write (flush) — collapsing N appends into ~1 write. Best-effort: a failed
+    // flush is logged, never thrown, so message handlers awaiting the append don't reject.
+    private static batchWrite<T>(key: string, queue: 'main' | 'network', item: T, flush: (batch: T[]) => Promise<void>, immediate = false): Promise<void> {
+        const batcher = this.batchers[key] ?? (this.batchers[key] = {items: [], pending: null, flushNow: null})
+        batcher.items.push(item)
+        if (!batcher.pending)
+            batcher.pending = this.runBatch(batcher, queue, flush as (batch: any[]) => Promise<void>)
+        if (immediate)
+            batcher.flushNow?.()
+        return batcher.pending
+    }
 
-            // todo check/uncheck
-            storage.userActions.unshift({
-                ...action,
-                tabInfo: currentTabInfo
-            })
-
-            if (storage.userActions.length > configuration.userActionsLimit) {
-                const itemForDeletion = storage.userActions[storage.userActions.length - 1]
-                // remove errors occurred before deleted action
-                storage.errors = storage.errors?.filter(error => error.timestamp > itemForDeletion.timestamp)
-                storage.userActions = storage.userActions.slice(0, configuration.userActionsLimit)
+    private static async runBatch(batcher: {items: any[], pending: Promise<void> | null, flushNow: (() => void) | null}, queue: 'main' | 'network', flush: (batch: any[]) => Promise<void>): Promise<void> {
+        await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, this.batchDelayMs)
+            batcher.flushNow = () => {
+                clearTimeout(timer)
+                resolve()
             }
-
-            this.reconcileDependentStorage(storage)
-
-            await this.setStorage(storage)
-        });
-    }
-
-    static async addError(error: Omit<ErrorLog, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
-        await this.enqueueWrite(async () => {
-            const storage = await this.getStorage()
-            const configuration = await ExtensionConfigurationManager.getConfiguration()
-
-            let toStore: Omit<ErrorLog, 'tabInfo'> = {...error}
-            if (error.type === 'network') {
-                const payloadId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-                const errorId = error.id || payloadId
-                const payload: NetworkErrorPayload = {
-                    id: payloadId,
-                    errorId,
-                    timestamp: error.timestamp,
-                    requestHeaders: error.requestHeaders,
-                    requestBody: error.requestBody,
-                    responseHeaders: error.responseHeaders,
-                    responseBody: error.responseBody
-                }
-                storage.networkErrorPayloads = storage.networkErrorPayloads || []
-                storage.networkErrorPayloads.unshift(payload)
-                storage.networkErrorPayloads = storage.networkErrorPayloads.slice(0, AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES)
-
-                const {
-                    requestHeaders: _rh,
-                    requestBody: _rb,
-                    responseHeaders: _rsh,
-                    responseBody: _rsb,
-                    ...slim
-                } = toStore
-                toStore = {
-                    ...slim,
-                    id: errorId,
-                    networkPayloadId: payloadId
-                }
-            }
-
-            storage.errors.unshift({
-                ...toStore,
-                tabInfo: currentTabInfo
-            })
-
-            if (storage.errors.length > configuration.errorsLimit) {
-                const itemForDeletion = storage.errors[storage.errors.length - 1]
-                storage.userActions = storage.userActions?.filter(action => action.timestamp > itemForDeletion.timestamp)
-                storage.errors = storage.errors.slice(0, configuration.errorsLimit)
-            }
-
-            this.reconcileDependentStorage(storage)
-
-            await this.setStorage(storage)
         })
+        batcher.flushNow = null
+        batcher.pending = null
+        const batch = batcher.items
+        batcher.items = []
+        if (!batch.length)
+            return
+        await this.enqueueWrite(() => flush(batch), queue)
+            .catch((error) => console.warn('QA Trace: batched write failed', error))
     }
 
-    static async addNetworkRequest(request: Omit<NetworkRequestLog, "tabInfo">, currentTabInfo: TabInfo): Promise<void> {
-        await this.enqueueWrite(async () => {
-            const configuration = await ExtensionConfigurationManager.getConfiguration()
-            const networkRequests = await this.getNetworkRequests()
-
-            networkRequests.unshift({
-                ...request,
-                tabInfo: currentTabInfo
-            })
-
-            await this.setNetworkRequests(networkRequests.slice(0, configuration.networkRequestsLimit))
-        }, 'network')
-    }
-
-    static async addUiErrorScreenshotAndAttach(errorId: string, screenshot: UiErrorScreenshot): Promise<void> {
-        await this.enqueueWrite(async () => {
-            const storage = await this.getStorage()
-            storage.uiErrorScreenshots.unshift(screenshot)
-            storage.uiErrorScreenshots = storage.uiErrorScreenshots.slice(0, AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES)
-            const idx = storage.errors.findIndex(error => error.id === errorId)
-            if (idx >= 0)
-                storage.errors[idx].screenshotId = screenshot.id
-            this.reconcileDependentStorage(storage)
-            await this.setStorage(storage)
-        })
-    }
-
-    static async clearData(): Promise<void> {
-        await this.enqueueAcrossQueues(async () => {
-            await browser.storage.local.set({
-                storageData: {...DEFAULT_STORAGE, networkRequests: []},
-                [NETWORK_REQUESTS_KEY]: []
-            })
-        })
-    }
-
-    static async cleanupOldData(): Promise<void> {
-        const twelveHoursAgo = Date.now() - (12 * 60 * 60 * 1000)
-        const isFresh = (timestamp: number) => timestamp > twelveHoursAgo
-
-        await this.enqueueWrite(async () => {
-            const storage = await this.getStorage()
-            storage.userActions = storage.userActions.filter(action => isFresh(action.timestamp))
-            storage.errors = storage.errors.filter(error => isFresh(error.timestamp))
-            storage.uiErrorScreenshots = storage.uiErrorScreenshots.filter(item => isFresh(item.timestamp))
-            storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter(p => isFresh(p.timestamp))
-            await SavedResponse.clearSavedLLMResponse(twelveHoursAgo)
-
-            this.reconcileDependentStorage(storage)
-            await this.setStorage(storage)
-        }, 'main')
-
-        await this.enqueueWrite(async () => {
-            const requests = await this.getNetworkRequests()
-            await this.setNetworkRequests(requests.filter(request => isFresh(request.timestamp)))
-        }, 'network')
-    }
-
-    private static enqueueWrite<T>(task: () => Promise<T>, queue: 'main' | 'network' = 'main'): Promise<T> {
-        const nextTask = this.writeQueues[queue].then(task)
+    private static enqueueWrite<T>(task: () => Promise<T>, queue = 'main'): Promise<T> {
+        const tail = this.writeQueues[queue] ?? Promise.resolve()
+        const nextTask = tail.then(task)
         this.writeQueues[queue] = nextTask.then(() => undefined, () => undefined)
         return nextTask
-    }
-
-    private static enqueueAcrossQueues(task: () => Promise<void>): Promise<void> {
-        return this.enqueueWrite(() => this.enqueueWrite(task, 'network'), 'main')
     }
 
     // Writes are best-effort: on a storage-quota rejection we shed the oldest/heaviest data and
@@ -260,32 +318,44 @@ export class StorageManager {
         }
     }
 
-    private static async shedStorageData(data: StorageData): Promise<boolean> {
-        if (data.uiErrorScreenshots.length > 0) {
-            data.uiErrorScreenshots = data.uiErrorScreenshots.slice(0, -1)
-            this.reconcileDependentStorage(data)
-            return true
+    // Round-robins the shed ladder one rung per retry (in value order) instead of draining each store
+    // before the next, so the separate network log isn't wiped before the blob's own oversized content
+    // is trimmed. Returns false once a full pass sheds nothing.
+    private static makeBlobShedder(data: StorageData): () => Promise<boolean> {
+        const rungs: Array<() => boolean | Promise<boolean>> = [
+            () => this.dropOldestScreenshot(data),
+            () => this.shedNetworkRequests(),
+            () => this.replaceIfHalved(data.networkErrorPayloads, (next) => { data.networkErrorPayloads = next }),
+            () => this.replaceIfHalved(data.errors, (next) => { data.errors = next }),
+            () => this.replaceIfHalved(data.userActions, (next) => { data.userActions = next })
+        ]
+        let cursor = 0
+        return async () => {
+            for (let i = 0; i < rungs.length; i++) {
+                const rung = rungs[cursor]
+                cursor = (cursor + 1) % rungs.length
+                if (await rung()) {
+                    this.reconcileDependentStorage(data)
+                    return true
+                }
+            }
+            return false
         }
-        if (await this.shedNetworkRequests())
-            return true
-        const payloads = this.halve(data.networkErrorPayloads || [])
-        if (payloads) {
-            data.networkErrorPayloads = payloads
-            this.reconcileDependentStorage(data)
-            return true
-        }
-        const errors = this.halve(data.errors)
-        if (errors) {
-            data.errors = errors
-            this.reconcileDependentStorage(data)
-            return true
-        }
-        const userActions = this.halve(data.userActions)
-        if (userActions) {
-            data.userActions = userActions
-            return true
-        }
-        return false
+    }
+
+    private static dropOldestScreenshot(data: StorageData): boolean {
+        if (data.uiErrorScreenshots.length === 0)
+            return false
+        data.uiErrorScreenshots = data.uiErrorScreenshots.slice(0, -1)
+        return true
+    }
+
+    private static replaceIfHalved<T>(items: T[], assign: (next: T[]) => void): boolean {
+        const next = this.halve(items)
+        if (!next)
+            return false
+        assign(next)
+        return true
     }
 
     private static shedNetworkRequests(): Promise<boolean> {

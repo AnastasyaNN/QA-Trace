@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request Details - QA Trace</title>
+    <link rel="stylesheet" href="detail-view.css">
+</head>
+<body>
+<div class="container">
+    <header class="detail-header">
+        <h1 data-i18n-key="detail_title">Request Details</h1>
+        <span id="detailTypeBadge" class="detail-type-badge"></span>
+    </header>
+
+    <div id="detailContent">
+        <div class="detail-meta">
+            <div><span class="detail-meta-label" data-i18n-key="detail_time">Time</span><span id="detailTime"></span></div>
+            <div><span class="detail-meta-label" data-i18n-key="detail_tab">Tab</span><span id="detailTab"></span></div>
+        </div>
+
+        <section id="messageSection" class="detail-section">
+            <label class="detail-label" data-i18n-key="detail_message">Message</label>
+            <div id="detailMessage" class="detail-value"></div>
+        </section>
+
+        <section id="stackSection" class="detail-section">
+            <label class="detail-label" data-i18n-key="detail_stack">Stack</label>
+            <pre id="detailStack" class="detail-pre"></pre>
+        </section>
+
+        <section id="requestSection" class="detail-block">
+            <div class="detail-block-head">
+                <h2 data-i18n-key="detail_request">Request</h2>
+                <button type="button" class="btn-icon" id="copyRequest" data-i18n-key="detail_copy" data-i18n-attr="title" title="Copy" aria-label="Copy"></button>
+            </div>
+            <div class="detail-field">
+                <label class="detail-label" data-i18n-key="detail_method">Method</label>
+                <input id="detailMethod" class="detail-input" type="text" readonly>
+            </div>
+            <div class="detail-field">
+                <label class="detail-label" data-i18n-key="detail_url">URL</label>
+                <input id="detailUrl" class="detail-input" type="text" readonly>
+            </div>
+            <div class="detail-field">
+                <label class="detail-label" data-i18n-key="detail_headers">Headers</label>
+                <textarea id="detailRequestHeaders" class="detail-textarea" rows="5" readonly></textarea>
+            </div>
+            <div class="detail-field">
+                <label class="detail-label" data-i18n-key="detail_body">Body</label>
+                <textarea id="detailRequestBody" class="detail-textarea" rows="8" readonly></textarea>
+            </div>
+        </section>
+
+        <section id="responseSection" class="detail-block">
+            <div class="detail-block-head">
+                <h2 data-i18n-key="detail_response">Response</h2>
+                <button type="button" class="btn-icon" id="copyResponse" data-i18n-key="detail_copy" data-i18n-attr="title" title="Copy" aria-label="Copy"></button>
+            </div>
+            <div class="detail-field">
+                <label class="detail-label" data-i18n-key="detail_status">Status</label>
+                <input id="detailStatus" class="detail-input" type="text" readonly>
+            </div>
+            <div class="detail-field">
+                <label class="detail-label" data-i18n-key="detail_headers">Headers</label>
+                <textarea id="detailResponseHeaders" class="detail-textarea" rows="5" readonly></textarea>
+            </div>
+            <div class="detail-field">
+                <label class="detail-label" data-i18n-key="detail_body">Body</label>
+                <textarea id="detailResponseBody" class="detail-textarea" rows="8" readonly></textarea>
+            </div>
+        </section>
+
+        <section id="screenshotSection" class="detail-section">
+            <label class="detail-label" data-i18n-key="detail_screenshot">Screenshot</label>
+            <img id="detailScreenshot" class="detail-screenshot" alt="">
+        </section>
+    </div>
+
+    <div id="detailNotFound" class="detail-not-found" data-i18n-key="detail_not_found">
+        Record not found. It may have expired.
+    </div>
+</div>
+<script type="module" src="/src/detail-view/detail-view.js"></script>
+</body>
+</html>

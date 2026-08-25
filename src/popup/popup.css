@@ -136,9 +136,13 @@ header h1 {
 
 .stats {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 16px;
     margin-bottom: 25px;
+}
+
+.stats.stats-with-network {
+    grid-template-columns: repeat(3, 1fr);
 }
 
 .stat-card {
@@ -874,6 +878,31 @@ header h1 {
     min-height: 42px;
     height: 42px;
     white-space: nowrap;
+}
+
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    background: var(--surface-white);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-icon:hover {
+    background: var(--qa-teal);
+    border-color: var(--qa-teal);
+    color: #fff;
+}
+
+.btn-inline-icon {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
 }
 
 .input-with-button {

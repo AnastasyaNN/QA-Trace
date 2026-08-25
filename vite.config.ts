@@ -11,6 +11,7 @@ export default defineConfig({
             browser: target,
             additionalInputs: [
                 "src/configuration/configuration.html",
+                "src/detail-view/detail-view.html",
                 "src/page-hooks/page-hooks.ts"
             ]
         }),

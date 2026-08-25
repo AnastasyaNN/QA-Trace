@@ -2,13 +2,15 @@ import {ErrorLog, UserAction, NetworkRequestLog} from "../lib/types";
 import {TrackedTab} from "./popup-tab-scope";
 import {PopupFormat} from "./popup-format";
 import {TextUtils} from "../lib/text.ts";
+import {ICON_BROWSE, ICON_COPY, ICON_SCREENSHOT} from "../lib/icons";
 
 export class PopupRenderer {
     static buildRecentErrors(
         recentErrors: ErrorLog[],
         noErrorsMessage: string,
         copyLabel: string,
-        copyShotLabel: string
+        copyShotLabel: string,
+        browseLabel: string
     ): DocumentFragment {
         const fragment = document.createDocumentFragment()
 
@@ -48,18 +50,12 @@ export class PopupRenderer {
             const actions = document.createElement('div')
             actions.className = 'error-item-actions'
 
-            const btn = document.createElement('button')
-            btn.type = 'button'
-            if (error.type === 'ui' && error.screenshotId) {
-                btn.className = 'btn btn-secondary btn-inline btn-copy-screenshot'
-                btn.dataset.errorIndex = String(idx)
-                btn.textContent = copyShotLabel
-            } else {
-                btn.className = 'btn btn-secondary btn-inline btn-copy-error'
-                btn.dataset.errorIndex = String(idx)
-                btn.textContent = copyLabel
-            }
-            actions.appendChild(btn)
+            if (error.type === 'ui' && error.screenshotId)
+                actions.appendChild(this.iconButton('btn-copy-screenshot', copyShotLabel, ICON_SCREENSHOT, {errorIndex: String(idx)}))
+            else
+                actions.appendChild(this.iconButton('btn-copy-error', copyLabel, ICON_COPY, {errorIndex: String(idx)}))
+            if (error.id)
+                actions.appendChild(this.iconButton('btn-browse-error', browseLabel, ICON_BROWSE, {errorId: error.id}))
 
             head.appendChild(info)
             head.appendChild(actions)
@@ -115,7 +111,8 @@ export class PopupRenderer {
     static buildRecentNetworkRequests(
         recentRequests: NetworkRequestLog[],
         noRequestsMessage: string,
-        copyLabel: string
+        copyLabel: string,
+        browseLabel: string
     ): DocumentFragment {
         const fragment = document.createDocumentFragment()
 
@@ -155,12 +152,9 @@ export class PopupRenderer {
             const actions = document.createElement('div')
             actions.className = 'network-request-item-actions'
 
-            const btn = document.createElement('button')
-            btn.type = 'button'
-            btn.className = 'btn btn-secondary btn-inline btn-copy-network-request'
-            btn.dataset.requestIndex = String(idx)
-            btn.textContent = copyLabel
-            actions.appendChild(btn)
+            actions.appendChild(this.iconButton('btn-copy-network-request', copyLabel, ICON_COPY, {requestIndex: String(idx)}))
+            if (request.id)
+                actions.appendChild(this.iconButton('btn-browse-network-request', browseLabel, ICON_BROWSE, {requestId: request.id}))
 
             head.appendChild(info)
             head.appendChild(actions)
@@ -269,5 +263,18 @@ export class PopupRenderer {
         })
 
         return fragment
+    }
+
+    private static iconButton(className: string, title: string, icon: string, data: Record<string, string>): HTMLButtonElement {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = `btn-icon btn-inline-icon ${className}`
+        button.title = title
+        button.setAttribute('aria-label', title)
+        button.innerHTML = icon
+        Object.entries(data).forEach(([key, value]) => {
+            button.dataset[key] = value
+        })
+        return button
     }
 }

@@ -137,7 +137,7 @@
                        for="llmKey"
                        data-i18n-key="config_LLM_api_key">API Key</label>
                 <input class="input" type="password" id="llmKey">
-                <p class="description" data-i18n-key="config_webhook_password_desc">Password will be encrypted with your passphrase and not stored in plaintext.</p>
+                <p class="description" data-i18n-key="config_LLM_api_key_desc">API Key will be encrypted with your passphrase and not stored in plaintext.</p>
             </div>
 
             <div class="form-group">
@@ -279,6 +279,14 @@
                 <label class="checkbox-label" for="redactUrlOrigin" data-i18n-key="config_redact_url_origin">Strip origin (protocol and host) from prompts</label>
             </div>
             <p class="description" data-i18n-key="config_redact_url_origin_desc">When enabled, the protocol and host are removed from tab and action URLs in generated prompts (e.g. /dashboard instead of https://example.com/dashboard).</p>
+        </div>
+
+        <div class="form-group" id="disableBodyTruncationGroup">
+            <div class="checkbox-item">
+                <input class="checkbox-input" type="checkbox" id="disableBodyTruncation">
+                <label class="checkbox-label" for="disableBodyTruncation" data-i18n-key="config_disable_body_truncation">Store full network bodies (disable size reduction)</label>
+            </div>
+            <p class="description" id="disableBodyTruncationDesc"></p>
         </div>
 
         <div class="navigation">

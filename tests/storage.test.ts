@@ -39,10 +39,20 @@ function request(timestamp: number, urlRequested: string) {
     return {timestamp, method: 'GET', urlRequested}
 }
 
+async function readStorage() {
+    const storage = await StorageManager.getStorage()
+    storage.networkRequests = await StorageManager.getNetworkRequests()
+    return storage
+}
+
 beforeEach(() => {
     for (const k of Object.keys(store))
         delete store[k]
     ctrl.quotaBytes = undefined
+    // Flush synchronously in tests so the batching debounce doesn't add latency per awaited call.
+    const storageManager = StorageManager as any
+    storageManager.batchers = {}
+    storageManager.batchDelayMs = 0
 })
 
 describe('StorageManager network requests', () => {
@@ -55,7 +65,7 @@ describe('StorageManager network requests', () => {
 
     it('getStorage merges the dedicated network key', async () => {
         await StorageManager.addNetworkRequest(request(5, 'u'), tab)
-        const s = await StorageManager.getStorage()
+        const s = await readStorage()
         expect(s.networkRequests).toHaveLength(1)
         expect(s.networkRequests[0].urlRequested).toBe('u')
     })
@@ -65,7 +75,7 @@ describe('StorageManager network requests', () => {
         await StorageManager.addError({type: 'console', message: 'boom', timestamp: 2}, tab)
         expect(store.networkRequests).toHaveLength(1)
         expect(store.storageData.networkRequests).toHaveLength(0)
-        const s = await StorageManager.getStorage()
+        const s = await readStorage()
         expect(s.errors).toHaveLength(1)
         expect(s.networkRequests).toHaveLength(1)
     })
@@ -85,9 +95,21 @@ describe('StorageManager network requests', () => {
             uiErrorScreenshots: [],
             networkErrorPayloads: []
         }
-        const s = await StorageManager.getStorage()
+        const s = await readStorage()
         expect(s.networkRequests).toHaveLength(1)
         expect(s.networkRequests[0].urlRequested).toBe('legacy')
+    })
+
+    it('getNetworkRequestById resolves a legacy in-blob request (matching the list)', async () => {
+        store.storageData = {
+            userActions: [],
+            errors: [],
+            networkRequests: [{...request(9, 'legacy'), id: 'x', tabInfo: tab}],
+            uiErrorScreenshots: [],
+            networkErrorPayloads: []
+        }
+        const found = await StorageManager.getNetworkRequestById('x')
+        expect(found?.urlRequested).toBe('legacy')
     })
 
     it('clearData empties both the blob and the network key', async () => {
@@ -96,7 +118,7 @@ describe('StorageManager network requests', () => {
         await StorageManager.clearData()
         expect(store.networkRequests).toHaveLength(0)
         expect(store.storageData.userActions).toHaveLength(0)
-        const s = await StorageManager.getStorage()
+        const s = await readStorage()
         expect(s.networkRequests).toHaveLength(0)
         expect(s.errors).toHaveLength(0)
     })
@@ -138,6 +160,77 @@ describe('StorageManager network requests', () => {
         expect(store.storageData.userActions).toHaveLength(1)
     })
 
+    it('interleaves blob trimming with the network log instead of draining the log first', async () => {
+        for (let i = 0; i < 64; i++)
+            await StorageManager.addNetworkRequest(request(i, `https://h/${i}`), tab)
+
+        const big = 'x'.repeat(5000)
+        const storage: any = {
+            userActions: [],
+            errors: Array.from({length: 8}, (_, i) => ({type: 'console', message: big, timestamp: 200 + i, tabInfo: tab})),
+            networkRequests: [],
+            uiErrorScreenshots: [],
+            networkErrorPayloads: []
+        }
+
+        // Budget holds the full network log plus a single (huge) error, so the blob — not the network
+        // log — is the over-quota culprit and must be trimmed to fit.
+        const fitted = {networkRequests: store.networkRequests, storageData: {...storage, errors: storage.errors.slice(0, 1)}}
+        ctrl.quotaBytes = JSON.stringify(fitted).length
+
+        await StorageManager.setStorage(storage)
+
+        // Blob content was trimmed...
+        expect(store.storageData.errors.length).toBeLessThan(8)
+        // ...but the network log was NOT drained to its floor first (the old shedder left it at 1).
+        expect(store.networkRequests.length).toBeGreaterThan(1)
+    })
+
+    it('sheds UI screenshots before the network log when the blob write hits quota', async () => {
+        for (let i = 0; i < 10; i++)
+            await StorageManager.addNetworkRequest(request(i, `https://h/${i}`), tab)
+        await StorageManager.addError(
+            {type: 'ui', id: 'e1', message: 'ui', timestamp: 1},
+            tab,
+            'data:image/jpeg;base64,' + 'A'.repeat(3000)
+        )
+
+        const networkBefore = store.networkRequests.length
+        expect(store.storageData.uiErrorScreenshots).toHaveLength(1)
+        ctrl.quotaBytes = JSON.stringify(store).length
+
+        await StorageManager.addError({type: 'console', message: 'trigger', timestamp: 2}, tab)
+
+        expect(store.storageData.uiErrorScreenshots).toHaveLength(0)
+        expect(store.networkRequests.length).toBe(networkBefore)
+    })
+
+    it('attaches a UI screenshot in the same write as its error', async () => {
+        await StorageManager.addError(
+            {type: 'ui', id: 'e1', message: 'ui', timestamp: 1},
+            tab,
+            'data:image/jpeg;base64,AAAA'
+        )
+        expect(store.storageData.uiErrorScreenshots).toHaveLength(1)
+        const shot = store.storageData.uiErrorScreenshots[0]
+        expect(shot.errorId).toBe('e1')
+        expect(store.storageData.errors[0].screenshotId).toBe(shot.id)
+    })
+
+    it('never leaves an orphaned screenshot when the attached error is later evicted', async () => {
+        await StorageManager.addError(
+            {type: 'ui', id: 'e1', message: 'ui', timestamp: 1},
+            tab,
+            'data:image/jpeg;base64,AAAA'
+        )
+        // errorsLimit defaults to 50 — push it past the limit so e1 (the oldest) is trimmed out.
+        for (let i = 0; i < 60; i++)
+            await StorageManager.addError({type: 'console', message: `e${i}`, timestamp: 100 + i}, tab)
+
+        expect(store.storageData.errors.some((error: any) => error.id === 'e1')).toBe(false)
+        expect(store.storageData.uiErrorScreenshots.some((shot: any) => shot.errorId === 'e1')).toBe(false)
+    })
+
     it('gives up gracefully (no throw) when even a single request cannot fit', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         ctrl.quotaBytes = 1
@@ -146,5 +239,45 @@ describe('StorageManager network requests', () => {
         expect(store.networkRequests).toBeUndefined()
         expect(warn).toHaveBeenCalled()
         warn.mockRestore()
+    })
+})
+
+describe('StorageManager immediate user-action writes', () => {
+    it('flushes an immediate action without waiting for the debounce window', async () => {
+        const sm = StorageManager as any
+        sm.batchDelayMs = 10_000
+        await StorageManager.addUserAction({type: 'open_tab', element: 'TAB', selector: '[tab]', timestamp: 1}, tab, true)
+        expect(store.storageData.userActions).toHaveLength(1)
+        expect(store.storageData.userActions[0].type).toBe('open_tab')
+    })
+
+    it('an immediate action also flushes an already-buffered debounced action, newest first', async () => {
+        const sm = StorageManager as any
+        sm.batchDelayMs = 10_000
+        const buffered = StorageManager.addUserAction({type: 'click', element: 'BTN', selector: '#b', timestamp: 1}, tab)
+        await StorageManager.addUserAction({type: 'reload_tab', element: 'TAB', selector: '[tab]', timestamp: 2}, tab, true)
+        await buffered
+        const actions = store.storageData.userActions
+        expect(actions).toHaveLength(2)
+        expect(actions[0].type).toBe('reload_tab')
+        expect(actions[1].type).toBe('click')
+    })
+})
+
+describe('StorageManager dependent reconciliation', () => {
+    it('skips reconciliation when a flush removes nothing', async () => {
+        const spy = vi.spyOn(StorageManager as any, 'reconcileDependentStorage')
+        await StorageManager.addUserAction({type: 'click', element: 'BTN', selector: '#b', timestamp: 1}, tab)
+        await StorageManager.addError({type: 'console', message: 'x', timestamp: 2}, tab)
+        expect(spy).not.toHaveBeenCalled()
+        spy.mockRestore()
+    })
+
+    it('reconciles when an error eviction can orphan a dependent', async () => {
+        const spy = vi.spyOn(StorageManager as any, 'reconcileDependentStorage')
+        for (let i = 0; i < 60; i++)
+            await StorageManager.addError({type: 'console', message: `e${i}`, timestamp: i}, tab)
+        expect(spy).toHaveBeenCalled()
+        spy.mockRestore()
     })
 })

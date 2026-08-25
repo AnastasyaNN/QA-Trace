@@ -1,12 +1,13 @@
 // Runtime init (token/redaction flag) is sent by content script via window.postMessage.
 
+import {BodyRedaction, MAX_RESPONSE_CHARS, MAX_BODY_REDACT_CHARS, MAX_STORED_RESPONSE_BYTES} from "../lib/body-redaction";
+
 type PostKind = 'console' | 'network' | 'network-request';
 
 interface QaTraceXhr extends XMLHttpRequest {
     _qaMethod: string,
     _qaUrl: string,
-    _qaRequestHeaders: Record<string, string>,
-    _qaRequestBody: string
+    _qaRequestHeaders: Record<string, string>
 }
 
 interface QaTraceWindow extends Window {
@@ -39,39 +40,14 @@ interface NetworkRequestPayload {
     responseBody: string
 }
 
+type PendingEvent = {
+    kind: PostKind,
+    payload: ConsolePayload | NetworkPayload | NetworkRequestPayload
+}
+
 class QaTracePageHooks {
-    private static readonly SENSITIVE_HEADER_PATTERNS: readonly string[] = [
-        'authorization',
-        'proxy-authorization',
-        'cookie',
-        'set-cookie',
-        'x-api-key',
-        'x-auth-token',
-        'x-csrf-token',
-        'x-xsrf-token',
-        'token',
-        'secret',
-        'password'
-    ];
-    private static readonly SENSITIVE_BODY_PATTERNS: readonly string[] = [
-        'authorization',
-        'token',
-        'secret',
-        'password',
-        'passwd',
-        'api_key',
-        'apikey',
-        'access_token',
-        'refresh_token',
-        'session'
-    ];
     private static readonly BINARY_CONTENT_TYPE =
         /^(?:image|audio|video|font)\/|^application\/(?:pdf|zip|gzip|x-gzip|x-bzip2|x-tar|x-7z-compressed|x-rar-compressed|wasm|x-protobuf|vnd\.(?:ms-|openxmlformats|oasis\.opendocument))/i
-    private static readonly MAX_RESPONSE_CHARS = 12_000
-    private static readonly SENSITIVE_BODY_KEY_VALUE_RE = new RegExp(
-        `([\\w.\\-\\[\\]]*(?:${QaTracePageHooks.SENSITIVE_BODY_PATTERNS.join('|')})[\\w.\\-\\[\\]]*\\s*[=:]\\s*)([^&\\s;"']+)`,
-        'gi'
-    )
 
     private static readonly MAX_PENDING_EVENTS = 250
 
@@ -79,7 +55,8 @@ class QaTracePageHooks {
     private initialized = false
     private shouldStripUrlQuery = true
     private trackAllNetwork = false
-    private pending: { kind: PostKind, payload: ConsolePayload | NetworkPayload | NetworkRequestPayload }[] = []
+    private disableBodyTruncation = false
+    private pending: PendingEvent[] = []
 
     private readonly originalFetch: typeof window.fetch
     private readonly originalXhrOpen: typeof XMLHttpRequest.prototype.open
@@ -93,12 +70,38 @@ class QaTracePageHooks {
         this.originalXhrSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader
     }
 
+    private get redactCap(): number {
+        return this.disableBodyTruncation ? Infinity : MAX_BODY_REDACT_CHARS
+    }
+
+    private get responseCap(): number {
+        return this.disableBodyTruncation ? Infinity : MAX_RESPONSE_CHARS
+    }
+
     static install(): void {
         const w = window as QaTraceWindow
         if (w.__qaTraceHooksInstalled)
             return
         w.__qaTraceHooksInstalled = true
-        new QaTracePageHooks().attach()
+        const hooks = new QaTracePageHooks()
+        hooks.seedFromScriptTag()
+        hooks.attach()
+    }
+
+    // trackAll/disableBodyTruncation arrive in the injected script's URL fragment so capture is
+    // gated and the body cap is set before the first request, not read-then-discarded. Runs while
+    // document.currentScript is still valid.
+    private seedFromScriptTag(): void {
+        try {
+            const src = (document.currentScript as HTMLScriptElement | null)?.src || ''
+            const hash = src.includes('#') ? src.slice(src.indexOf('#') + 1) : ''
+            const params = new URLSearchParams(hash)
+            if (params.get('trackAll') === '1')
+                this.trackAllNetwork = true
+            if (params.get('disableBodyTruncation') === '1')
+                this.disableBodyTruncation = true
+        } catch {
+        }
     }
 
     private attach(): void {
@@ -112,25 +115,32 @@ class QaTracePageHooks {
     private readonly onInitMessage = (event: MessageEvent): void => {
         if (event.source !== window || !event.data || event.data.source !== 'qa-trace-init')
             return
-        if (typeof event.data.token !== 'string' || !event.data.token)
+        const token = event.data.token
+        if (typeof token !== 'string' || !token)
             return
-        this.qaTraceToken = event.data.token
-        this.shouldStripUrlQuery = event.data.stripUrlQuery
-        this.trackAllNetwork = event.data.trackAllNetwork
+        if (this.qaTraceToken && token !== this.qaTraceToken)
+            return
+        this.qaTraceToken = token
+        this.shouldStripUrlQuery = this.initialized
+            ? this.shouldStripUrlQuery || !!event.data.stripUrlQuery
+            : !!event.data.stripUrlQuery
+        this.trackAllNetwork = this.trackAllNetwork || !!event.data.trackAllNetwork
+        if (!this.initialized)
+            this.disableBodyTruncation = this.disableBodyTruncation || !!event.data.disableBodyTruncation
         this.initialized = true
         this.flushPending()
     }
 
     // Hooks intercept requests before the content script delivers the token/flags, so events captured
-    // during page load are buffered and replayed here
+    // during page load are buffered and replayed here.
     private flushPending(): void {
         const buffered = this.pending
         this.pending = []
-        buffered.forEach(({kind, payload}) => {
+        for (const {kind, payload} of buffered) {
             if (kind === 'network-request' && !this.trackAllNetwork)
-                return
+                continue
             this.sendNow(kind, payload)
-        })
+        }
     }
 
     private readonly onWindowError = (event: ErrorEvent): void => {
@@ -203,12 +213,22 @@ class QaTracePageHooks {
 
     private post(kind: PostKind, payload: ConsolePayload | NetworkPayload | NetworkRequestPayload): void {
         if (!this.initialized) {
-            if (this.pending.length >= QaTracePageHooks.MAX_PENDING_EVENTS)
-                this.pending.shift()
-            this.pending.push({kind, payload})
+            this.pushPending({kind, payload})
             return
         }
         this.sendNow(kind, payload)
+    }
+
+    private pushPending(entry: PendingEvent): void {
+        if (this.pending.length >= QaTracePageHooks.MAX_PENDING_EVENTS) {
+            // Evict a network-request before a console/network error, which is the higher-value signal.
+            const evictable = this.pending.findIndex((e) => e.kind === 'network-request')
+            if (evictable >= 0)
+                this.pending.splice(evictable, 1)
+            else
+                this.pending.shift()
+        }
+        this.pending.push(entry)
     }
 
     private sendNow(kind: PostKind, payload: ConsolePayload | NetworkPayload | NetworkRequestPayload): void {
@@ -225,72 +245,12 @@ class QaTracePageHooks {
         }, targetOrigin)
     }
 
-    private isSensitiveHeader(name: string): boolean {
-        const normalized = String(name || '').toLowerCase()
-        return QaTracePageHooks.SENSITIVE_HEADER_PATTERNS.some((pattern) => normalized.includes(pattern))
-    }
-
-    private isSensitiveBodyKey(name: string): boolean {
-        const normalized = String(name || '').toLowerCase()
-        return QaTracePageHooks.SENSITIVE_BODY_PATTERNS.some((pattern) => normalized.includes(pattern))
-    }
-
-    private redactParsedJson(value: unknown, depth = 0): unknown {
-        if (depth > 6)
-            return '[Truncated]'
-        if (Array.isArray(value))
-            return value.map((entry) => this.redactParsedJson(entry, depth + 1))
-        if (!value || typeof value !== 'object')
-            return value
-        const redacted: Record<string, unknown> = {}
-        Object.entries(value).forEach(([key, val]) => {
-            if (this.isSensitiveBodyKey(key))
-                redacted[key] = '[REDACTED]'
-            else
-                redacted[key] = this.redactParsedJson(val, depth + 1)
-        })
-        return redacted
-    }
-
-    private truncateBody(value: string | null | undefined): string {
-        if (value == null)
-            return ''
-        const str = String(value)
-        return str.length > QaTracePageHooks.MAX_RESPONSE_CHARS
-            ? str.slice(0, QaTracePageHooks.MAX_RESPONSE_CHARS)
-            : str
-    }
-
-    private redactBodyText(value: string | null | undefined): string {
-        const text = this.truncateBody(value)
-        if (!text)
-            return ''
-        let out: string
-        try {
-            out = JSON.stringify(this.redactParsedJson(JSON.parse(text)))
-        } catch {
-            // Non-JSON bodies (form-encoded, text/plain)
-            out = this.redactKeyValueBody(text)
-        }
-        return this.truncateBody(this.redactTokenPatterns(out))
-    }
-
-    private redactKeyValueBody(text: string): string {
-        return text.replace(QaTracePageHooks.SENSITIVE_BODY_KEY_VALUE_RE, (_match, prefix) => `${prefix}[REDACTED]`)
-    }
-
-    private redactTokenPatterns(text: string): string {
-        return text
-            .replace(/eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+/g, '[REDACTED]')
-            .replace(/\bBearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer [REDACTED]')
-    }
-
     private sanitizeHeadersObject(headersObj: Record<string, unknown>): Record<string, string> {
         const result: Record<string, string> = {}
         if (!headersObj || typeof headersObj !== 'object')
             return result
         Object.entries(headersObj).forEach(([k, v]) => {
-            if (this.isSensitiveHeader(k))
+            if (BodyRedaction.isSensitiveKey(k))
                 return
             result[String(k)] = String(v)
         })
@@ -304,14 +264,14 @@ class QaTracePageHooks {
                 return result
             if (typeof Headers !== 'undefined' && headersLike instanceof Headers) {
                 headersLike.forEach((value, key) => {
-                    if (!this.isSensitiveHeader(key))
+                    if (!BodyRedaction.isSensitiveKey(key))
                         result[key] = value
                 })
                 return result
             }
             if (Array.isArray(headersLike)) {
                 headersLike.forEach(([key, value]) => {
-                    if (!this.isSensitiveHeader(key))
+                    if (!BodyRedaction.isSensitiveKey(key))
                         result[String(key)] = String(value)
                 })
                 return result
@@ -326,13 +286,13 @@ class QaTracePageHooks {
         if (body == null)
             return ''
         if (typeof body === 'string')
-            return this.redactBodyText(body);
+            return BodyRedaction.redact(body, this.redactCap, this.responseCap);
         if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams)
-            return this.redactBodyText(body.toString())
+            return BodyRedaction.redact(body.toString(), this.redactCap, this.responseCap)
         if (typeof FormData !== 'undefined' && body instanceof FormData) {
             const pairs: [string, string][] = []
             body.forEach((value, key) => {
-                const safeValue = this.isSensitiveBodyKey(key)
+                const safeValue = BodyRedaction.isSensitiveKey(key)
                     ? '[REDACTED]'
                     : (typeof value === 'string'
                         ? value
@@ -340,10 +300,10 @@ class QaTracePageHooks {
                     )
                 pairs.push([key, safeValue])
             })
-            return this.truncateBody(JSON.stringify(pairs))
+            return BodyRedaction.truncate(BodyRedaction.redactTokenPatterns(JSON.stringify(pairs)), this.responseCap)
         }
         try {
-            return this.redactBodyText(this.serialize(body))
+            return BodyRedaction.redact(this.serialize(body), this.redactCap, this.responseCap)
         } catch {
             return ''
         }
@@ -355,37 +315,76 @@ class QaTracePageHooks {
         return !!contentType && QaTracePageHooks.BINARY_CONTENT_TYPE.test(contentType)
     }
 
-    private async readResponseBodySafe(response: Response): Promise<string> {
+    private static responseBodyUnavailable(reason: unknown): string {
+        const detail = reason instanceof Error
+            ? reason.message
+            : String(reason ?? '')
+        return detail
+            ? `[QA Trace: response body could not be captured — ${detail}]`
+            : '[QA Trace: response body could not be captured]'
+    }
+
+    // exact size is known for XHR (full responseText is in memory); a streamed fetch body is only
+    // read up to the cap, so its size is reported as a lower bound.
+    private static responseTooLarge(bytes: number, exact: boolean): string {
+        const size = QaTracePageHooks.formatBytes(bytes)
+        return `[QA Trace: response body too large to store — ${exact ? size : 'over ' + size}]`
+    }
+
+    private static formatBytes(bytes: number): string {
+        if (bytes >= 1_000_000)
+            return (bytes / 1_000_000).toFixed(1) + ' MB'
+        if (bytes >= 1_000)
+            return Math.round(bytes / 1_000) + ' KB'
+        return bytes + ' B'
+    }
+
+    private static byteLength(str: string): number {
+        return new TextEncoder().encode(str).length
+    }
+
+    private async readResponseBody(response: Response): Promise<string> {
         try {
             if (this.isBinaryContentType(response.headers.get('content-type')))
                 return ''
-            const text = await this.readCappedText(response.clone())
-            return this.redactBodyText(text)
-        } catch {
-            return ''
+            // Truncating mode never keeps more than redactCap, so don't buffer up to 9 MB to slice
+            // it away; the "too large" marker is only meaningful when storing full bodies.
+            const cap = this.disableBodyTruncation ? MAX_STORED_RESPONSE_BYTES : this.redactCap
+            const {text, bytes, overflow} = await this.readCappedText(response, cap)
+            if (overflow && this.disableBodyTruncation)
+                return QaTracePageHooks.responseTooLarge(bytes, false)
+            return BodyRedaction.redact(text, this.redactCap, this.responseCap)
+        } catch (error) {
+            return QaTracePageHooks.responseBodyUnavailable(error)
         }
     }
 
-    // Reads at most MAX_RESPONSE_CHARS from the (cloned) response, then cancels so we never
-    // buffer a large/streaming body just to keep the first MAX_RESPONSE_CHARS
-    private async readCappedText(response: Response): Promise<string> {
-        const body = response.body
-        if (!body)
-            return await response.text()
+    // Reads at most cap bytes from the (cloned) body, then cancels so we never buffer a large or
+    // streaming body; overflow is true when the source held more than cap. Cap is bytes because the
+    // storage.local quota is bytes; output length is bounded downstream by responseCap.
+    private async readCappedText(source: Request | Response, cap: number): Promise<{text: string, bytes: number, overflow: boolean}> {
+        const body = source.body
+        if (!body) {
+            const full = await source.text()
+            const bytes = QaTracePageHooks.byteLength(full)
+            return {text: full, bytes, overflow: bytes > cap}
+        }
         const reader = body.getReader()
         const decoder = new TextDecoder()
         let out = ''
+        let bytes = 0
         try {
-            while (out.length < QaTracePageHooks.MAX_RESPONSE_CHARS) {
+            while (bytes <= cap) {
                 const {done, value} = await reader.read()
                 if (done)
-                    break
+                    return {text: out + decoder.decode(), bytes, overflow: false}
+                bytes += value.byteLength
                 out += decoder.decode(value, {stream: true})
             }
         } finally {
             void reader.cancel()
         }
-        return out
+        return {text: out, bytes, overflow: true}
     }
 
     private readXhrResponseBody(xhr: XMLHttpRequest): string {
@@ -393,13 +392,22 @@ class QaTracePageHooks {
             if (this.isBinaryContentType(xhr.getResponseHeader('content-type')))
                 return ''
             const type = xhr.responseType
-            if (type === '' || type === 'text')
-                return this.redactBodyText(xhr.responseText || '')
-            if (type === 'json')
-                return this.redactBodyText(JSON.stringify(xhr.response))
-            return ''
-        } catch {
-            return ''
+            const raw = type === '' || type === 'text'
+                ? (xhr.responseText || '')
+                : type === 'json'
+                    ? JSON.stringify(xhr.response)
+                    : ''
+            if (!raw)
+                return ''
+            // UTF-8 is at most 3 bytes per UTF-16 code unit, so skip the encode when it can't overflow.
+            if (raw.length * 3 > MAX_STORED_RESPONSE_BYTES) {
+                const bytes = QaTracePageHooks.byteLength(raw)
+                if (bytes > MAX_STORED_RESPONSE_BYTES)
+                    return QaTracePageHooks.responseTooLarge(bytes, true)
+            }
+            return BodyRedaction.redact(raw, this.redactCap, this.responseCap)
+        } catch (error) {
+            return QaTracePageHooks.responseBodyUnavailable(error)
         }
     }
 
@@ -411,10 +419,14 @@ class QaTracePageHooks {
                 return
             const key = line.slice(0, idx).trim()
             const value = line.slice(idx + 1).trim()
-            if (!this.isSensitiveHeader(key))
+            if (!BodyRedaction.isSensitiveKey(key))
                 result[key] = value
         })
         return result
+    }
+
+    private shouldRecordRequest(status: number): boolean {
+        return this.trackAllNetwork && status !== 0
     }
 
     private emitNetworkEvent(isError: boolean, shouldRecordRequest: boolean, errorMessage: string, payload: NetworkRequestPayload): void {
@@ -425,30 +437,35 @@ class QaTracePageHooks {
     }
 
     private async patchedFetch(...args: Parameters<typeof fetch>): Promise<Response> {
+        const self = this
         const input = args[0]
-        const init = args[1] || {}
+        const init = (args[1] || {}) as RequestInit
         const requestUrlRaw = typeof input === 'string'
             ? input
             : ((input as Request)?.url || '')
         const requestUrl = this.stripRequestUrlForTelemetry(requestUrlRaw)
-        const requestMethod = (init as RequestInit)?.method || (input as Request)?.method || 'GET'
-        const requestHeaders = this.headersToObject((init as RequestInit)?.headers || (input as Request)?.headers)
-        const requestBody = this.parseRequestBody((init as RequestInit)?.body)
+        const requestMethod = init.method || (input as Request)?.method || 'GET'
+        const requestHeaders = this.headersToObject(init.headers || (input as Request)?.headers)
+        const requestClone = init.body == null && typeof Request !== 'undefined' && input instanceof Request && input.body
+            ? input.clone()
+            : null
         try {
             const response = await this.originalFetch(...args)
             const isError = !response.ok && response.status !== 0
-            const shouldRecordRequest = (this.trackAllNetwork || !this.initialized) && response.status !== 0
+            const shouldRecordRequest = this.shouldRecordRequest(response.status)
             if (!isError && !shouldRecordRequest)
                 return response
 
+            // Read the body now, not lazily: an unread clone held across the init gap makes the
+            // browser buffer the whole response and loses large bodies. post() buffers pre-init.
             const payload: NetworkRequestPayload = {
                 status: response.status,
                 method: requestMethod,
                 urlRequested: requestUrl,
                 requestHeaders,
-                requestBody,
+                requestBody: await readRequestBody(),
                 responseHeaders: this.headersToObject(response.headers),
-                responseBody: await this.readResponseBodySafe(response)
+                responseBody: await this.readResponseBody(response.clone())
             }
             this.emitNetworkEvent(isError, shouldRecordRequest, 'HTTP ' + response.status + ' ' + response.statusText, payload)
             return response
@@ -458,11 +475,26 @@ class QaTracePageHooks {
                 method: requestMethod,
                 urlRequested: requestUrl,
                 requestHeaders,
-                requestBody,
+                requestBody: await readRequestBody(),
                 responseHeaders: {},
                 responseBody: ''
             })
             throw error
+        }
+
+        async function readRequestBody(): Promise<string> {
+            if (init.body != null)
+                return self.parseRequestBody(init.body)
+            if (!requestClone)
+                return ''
+            if (self.isBinaryContentType(requestClone.headers.get('content-type')))
+                return ''
+            try {
+                const {text} = await self.readCappedText(requestClone, self.redactCap)
+                return BodyRedaction.redact(text, self.redactCap, self.responseCap)
+            } catch {
+                return ''
+            }
         }
     }
 
@@ -483,7 +515,7 @@ class QaTracePageHooks {
 
         XMLHttpRequest.prototype.setRequestHeader = function (this: QaTraceXhr, header: string, value: string) {
             try {
-                if (!self.isSensitiveHeader(header)) {
+                if (!BodyRedaction.isSensitiveKey(header)) {
                     this._qaRequestHeaders = this._qaRequestHeaders || {}
                     this._qaRequestHeaders[String(header)] = String(value)
                 }
@@ -493,7 +525,9 @@ class QaTracePageHooks {
         }
 
         XMLHttpRequest.prototype.send = function (this: QaTraceXhr, body?: Document | XMLHttpRequestBodyInit | null) {
-            this._qaRequestBody = self.parseRequestBody(body as BodyInit | null)
+            // Defer body redaction to emit time (past the emit gate), mirroring patchedFetch, so
+            // successful untracked requests don't pay parseRequestBody on the send hot path.
+            const readRequestBody = () => self.parseRequestBody(body as BodyInit | null)
             this.addEventListener('error', () => {
                 const xhrUrl = self.stripRequestUrlForTelemetry(this._qaUrl || '')
                 self.post('network', {
@@ -502,28 +536,29 @@ class QaTracePageHooks {
                     method: this._qaMethod || 'GET',
                     urlRequested: xhrUrl,
                     requestHeaders: this._qaRequestHeaders || {},
-                    requestBody: this._qaRequestBody || '',
+                    requestBody: readRequestBody(),
                     responseHeaders: {},
                     responseBody: ''
                 })
             })
             this.addEventListener('load', () => {
-                const isError = this.status >= 400
-                const shouldRecordRequest = (self.trackAllNetwork || !self.initialized) && this.status !== 0
+                const xhr = this
+                const isError = xhr.status >= 400
+                const shouldRecordRequest = self.shouldRecordRequest(xhr.status)
                 if (!isError && !shouldRecordRequest)
                     return
-                const xhrUrlLoaded = self.stripRequestUrlForTelemetry(this._qaUrl || '')
-                const method = this._qaMethod || 'GET'
+                const xhrUrlLoaded = self.stripRequestUrlForTelemetry(xhr._qaUrl || '')
+                const method = xhr._qaMethod || 'GET'
                 const payload: NetworkRequestPayload = {
-                    status: this.status,
+                    status: xhr.status,
                     method,
                     urlRequested: xhrUrlLoaded,
-                    requestHeaders: this._qaRequestHeaders || {},
-                    requestBody: this._qaRequestBody || '',
-                    responseHeaders: self.parseRawResponseHeaders(this.getAllResponseHeaders?.() || ''),
-                    responseBody: self.readXhrResponseBody(this)
+                    requestHeaders: xhr._qaRequestHeaders || {},
+                    requestBody: readRequestBody(),
+                    responseHeaders: self.parseRawResponseHeaders(xhr.getAllResponseHeaders?.() || ''),
+                    responseBody: self.readXhrResponseBody(xhr)
                 }
-                self.emitNetworkEvent(isError, shouldRecordRequest, 'XHR ' + method + ' ' + xhrUrlLoaded + ' failed with status ' + this.status, payload)
+                self.emitNetworkEvent(isError, shouldRecordRequest, 'XHR ' + method + ' ' + xhrUrlLoaded + ' failed with status ' + xhr.status, payload)
             })
             return originalXhrSend.call(this, body)
         }

@@ -20,7 +20,7 @@
         </div>
     </header>
 
-    <div class="stats">
+    <div class="stats" id="statsGrid">
         <div class="stat-card stat-card-user-actions">
             <span id="userActionsCount">0</span>
             <h3 data-i18n-key="popup_user_actions">User Actions</h3>
@@ -61,14 +61,14 @@
             <label data-i18n-key="popup_response_summary">Summary</label>
             <div class="input-with-button">
                 <input id="latestResponseSummary" class="input-field" type="text" readonly>
-                <button id="copyLatestSummary" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+                <button type="button" id="copyLatestSummary" class="btn-icon btn-inline-icon" data-i18n-key="popup_copy" data-i18n-attr="title" title="Copy" aria-label="Copy"></button>
             </div>
         </div>
         <div class="latest-response-field">
             <label data-i18n-key="popup_response_description">Description</label>
             <div class="input-with-button">
                 <textarea id="latestResponseDescription" class="input-field" rows="6" readonly></textarea>
-                <button id="copyLatestDescription" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+                <button type="button" id="copyLatestDescription" class="btn-icon btn-inline-icon" data-i18n-key="popup_copy" data-i18n-attr="title" title="Copy" aria-label="Copy"></button>
             </div>
         </div>
     </div>
@@ -305,7 +305,7 @@
         <div class="prompt-content">
             <textarea id="promptTextarea" class="prompt-textarea" data-i18n-key="popup_prompt_placeholder" data-i18n-attr="placeholder" placeholder="Generated prompt will appear here..."></textarea>
             <div class="inline-actions">
-                <button id="copyPrompt" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy_prompt">Copy Prompt</button>
+                <button type="button" id="copyPrompt" class="btn-icon btn-inline-icon" data-i18n-key="popup_copy_prompt" data-i18n-attr="title" title="Copy Prompt" aria-label="Copy Prompt"></button>
             </div>
         </div>
     </div>
@@ -323,14 +323,14 @@
                     <label for="responseSummary" class="input-label" data-i18n-key="popup_response_summary">Summary</label>
                     <div class="input-with-button">
                         <input id="responseSummary" class="input-field" type="text" readonly>
-                        <button id="copyResponseSummary" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+                        <button type="button" id="copyResponseSummary" class="btn-icon btn-inline-icon" data-i18n-key="popup_copy" data-i18n-attr="title" title="Copy" aria-label="Copy"></button>
                     </div>
                 </div>
                 <div class="response-field">
                     <label for="responseDescription" class="input-label" data-i18n-key="popup_response_description">Description</label>
                     <div class="input-with-button">
                         <textarea id="responseDescription" class="input-field" rows="8" readonly></textarea>
-                        <button id="copyResponseDescription" class="btn btn-secondary btn-inline" data-i18n-key="popup_copy">Copy</button>
+                        <button type="button" id="copyResponseDescription" class="btn-icon btn-inline-icon" data-i18n-key="popup_copy" data-i18n-attr="title" title="Copy" aria-label="Copy"></button>
                     </div>
                 </div>
             </div>

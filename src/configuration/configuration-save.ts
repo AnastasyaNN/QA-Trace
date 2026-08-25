@@ -22,6 +22,11 @@ export class ConfigSave {
         }
     }
 
+    private static parseLimit(value: string, fallback: number): number {
+        const parsed = Math.floor(Number(value))
+        return parsed >= 1 ? parsed : fallback
+    }
+
     private static getConfigurationFromUI(existingConfiguration: ExtensionConfiguration): {
         configuration: ExtensionConfiguration,
         llmKey?: string,
@@ -63,6 +68,7 @@ export class ConfigSave {
         const textLengthLimit = (ConfigDOM.getHtmlElement("textLengthLimit") as HTMLInputElement).value
         const redactUrlQueryParams = ConfigDOM.getHtmlElement('redactUrlQueryParams') as HTMLInputElement
         const redactUrlOrigin = ConfigDOM.getHtmlElement('redactUrlOrigin') as HTMLInputElement
+        const disableBodyTruncation = ConfigDOM.getHtmlElement('disableBodyTruncation') as HTMLInputElement
         const uiErrorSelectors = ConfigValidation.getUiErrorSelectorsFromUI()
         const effectiveUiSelectors = uiErrorSelectors.length > 0
             ? uiErrorSelectors
@@ -87,10 +93,10 @@ export class ConfigSave {
             llmEnabled,
             llm: llmConfig,
             language: language || 'auto',
-            userActionsLimit: Math.max(1, Math.floor(+userActionsLimit)) || DEFAULT_CONFIGURATION.userActionsLimit,
-            errorsLimit: Math.max(1, Math.floor(+errorsLimit)) || DEFAULT_CONFIGURATION.errorsLimit,
-            networkRequestsLimit: Math.max(1, Math.floor(+networkRequestsLimit)) || DEFAULT_CONFIGURATION.networkRequestsLimit,
-            textLengthLimit: Math.max(1, Math.floor(+textLengthLimit)) || DEFAULT_CONFIGURATION.textLengthLimit,
+            userActionsLimit: ConfigSave.parseLimit(userActionsLimit, DEFAULT_CONFIGURATION.userActionsLimit),
+            errorsLimit: ConfigSave.parseLimit(errorsLimit, DEFAULT_CONFIGURATION.errorsLimit),
+            networkRequestsLimit: ConfigSave.parseLimit(networkRequestsLimit, DEFAULT_CONFIGURATION.networkRequestsLimit),
+            textLengthLimit: ConfigSave.parseLimit(textLengthLimit, DEFAULT_CONFIGURATION.textLengthLimit),
             uiErrorSelectors: effectiveUiSelectors,
             webhookEnabled,
             webhook: {
@@ -99,7 +105,8 @@ export class ConfigSave {
                 encryptedPassword: existingConfiguration.webhook?.encryptedPassword
             },
             redactUrlQueryParams: !!redactUrlQueryParams?.checked,
-            redactUrlOrigin: !!redactUrlOrigin?.checked
+            redactUrlOrigin: !!redactUrlOrigin?.checked,
+            disableBodyTruncation: !!disableBodyTruncation?.checked
         }
         let configuration = summaryTicketExample && descriptionTicketExample
             ? {
