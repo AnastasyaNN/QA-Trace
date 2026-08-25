@@ -1,5 +1,5 @@
 import {StorageManager} from "../lib/storage";
-import {UserAction, ErrorLog, TabInfo} from "../lib/types";
+import {UserAction, ErrorLog, TabInfo, NetworkRequestLog} from "../lib/types";
 import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {ScreenshotUtils} from "../lib/screenshots";
@@ -10,9 +10,11 @@ import MessageSender = Runtime.MessageSender;
 
 const MAX_TEXT_FIELD_LENGTH = 5000;
 
-const ERROR_BURST_WINDOW_MS = 60_000;
+const BURST_WINDOW_MS = 60_000;
 const ERROR_BURST_MAX = 120;
+const NETWORK_REQUEST_BURST_MAX = 600;
 const errorBurstByTab = new Map<string, { count: number; resetAt: number }>();
+const networkRequestBurstByTab = new Map<string, { count: number; resetAt: number }>();
 
 // Tab ids for which we already recorded `open_tab` (first navigation to an allowed origin).
 const openTabLoggedForTabId = new Set<number>();
@@ -69,16 +71,16 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
     }, tabInfo)
 }
 
-function allowErrorBurst(tabId: number | undefined): boolean {
+function allowBurst(buckets: Map<string, { count: number; resetAt: number }>, tabId: number | undefined, max: number): boolean {
     const key = String(tabId ?? 'none')
     const now = Date.now()
-    let bucket = errorBurstByTab.get(key)
+    let bucket = buckets.get(key)
     if (!bucket || now > bucket.resetAt) {
-        bucket = {count: 1, resetAt: now + ERROR_BURST_WINDOW_MS};
-        errorBurstByTab.set(key, bucket)
+        bucket = {count: 1, resetAt: now + BURST_WINDOW_MS}
+        buckets.set(key, bucket)
         return true
     }
-    if (bucket.count >= ERROR_BURST_MAX)
+    if (bucket.count >= max)
         return false
     bucket.count += 1
     return true
@@ -147,13 +149,7 @@ function truncateHeadersRecord(input: unknown): Record<string, string> | undefin
         : undefined
 }
 
-function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "tabInfo"> | null {
-    const timestamp = Number(input.timestamp)
-    if (!input || typeof input !== 'object' || !isValidErrorType(input.type)) {
-        return null
-    }
-    if (!Number.isFinite(timestamp))
-        return null
+function sanitizeNetworkFields(input: any, redactUrlQuery: boolean) {
     let urlRequested: string | undefined
     if (input.urlRequested) {
         let u = String(input.urlRequested)
@@ -161,15 +157,6 @@ function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "
         urlRequested = truncateField(u, 2000)
     }
     return {
-        id: input.id
-            ? truncateField(input.id, 100)
-            : undefined,
-        type: input.type,
-        message: truncateField(input.message, MAX_TEXT_FIELD_LENGTH),
-        timestamp,
-        stack: input.stack
-            ? truncateField(input.stack, MAX_TEXT_FIELD_LENGTH)
-            : undefined,
         status: typeof input.status === 'number'
             ? input.status
             : undefined,
@@ -185,6 +172,39 @@ function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "
         responseBody: input.responseBody
             ? truncateField(input.responseBody, MAX_TEXT_FIELD_LENGTH)
             : undefined
+    }
+}
+
+function sanitizeErrorLog(input: any, redactUrlQuery: boolean): Omit<ErrorLog, "tabInfo"> | null {
+    const timestamp = Number(input.timestamp)
+    if (!input || typeof input !== 'object' || !isValidErrorType(input.type)) {
+        return null
+    }
+    if (!Number.isFinite(timestamp))
+        return null
+    return {
+        id: input.id
+            ? truncateField(input.id, 100)
+            : undefined,
+        type: input.type,
+        message: truncateField(input.message, MAX_TEXT_FIELD_LENGTH),
+        timestamp,
+        stack: input.stack
+            ? truncateField(input.stack, MAX_TEXT_FIELD_LENGTH)
+            : undefined,
+        ...sanitizeNetworkFields(input, redactUrlQuery)
+    }
+}
+
+function sanitizeNetworkRequest(input: any, redactUrlQuery: boolean): Omit<NetworkRequestLog, "tabInfo"> | null {
+    const timestamp = Number(input.timestamp)
+    if (!input || typeof input !== 'object')
+        return null
+    if (!Number.isFinite(timestamp))
+        return null
+    return {
+        timestamp,
+        ...sanitizeNetworkFields(input, redactUrlQuery)
     }
 }
 
@@ -206,15 +226,24 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
             break
 
         case 'ERROR_DETECTED':
-            if (!allowErrorBurst(sender.tab?.id))
-                return
             const error = sanitizeErrorLog(message.data, redactQuery)
             if (!error)
+                return
+            if (!allowBurst(errorBurstByTab, sender.tab?.id, ERROR_BURST_MAX))
                 return
             await StorageManager.addError(error, tabInfo)
             if (error.type === 'ui' && error.id && sender?.tab?.windowId) {
                 await ScreenshotUtils.captureAndStoreUiScreenshot(error.id, tabInfo, sender.tab.windowId);
             }
+            break
+
+        case 'NETWORK_REQUEST_DETECTED':
+            const networkRequest = sanitizeNetworkRequest(message.data, redactQuery)
+            if (!networkRequest)
+                return
+            if (!allowBurst(networkRequestBurstByTab, sender.tab?.id, NETWORK_REQUEST_BURST_MAX))
+                return
+            await StorageManager.addNetworkRequest(networkRequest, tabInfo)
             break
 
         case 'CLEAR_DATA':
@@ -235,6 +264,8 @@ browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 
 browser.tabs.onRemoved.addListener((tabId) => {
     openTabLoggedForTabId.delete(tabId)
+    errorBurstByTab.delete(String(tabId))
+    networkRequestBurstByTab.delete(String(tabId))
 });
 
 browser.webNavigation.onCommitted.addListener((details) => {

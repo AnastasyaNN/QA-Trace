@@ -51,6 +51,7 @@ class ConfigurationPage {
         const stepsDocumentationExampleTextArea = ConfigDOM.getHtmlElement("stepsDocumentationExample") as HTMLTextAreaElement
         const userActionsLimit = ConfigDOM.getHtmlElement("userActionsLimit") as HTMLInputElement
         const errorsLimit = ConfigDOM.getHtmlElement("errorsLimit") as HTMLInputElement
+        const networkRequestsLimit = ConfigDOM.getHtmlElement("networkRequestsLimit") as HTMLInputElement
         const textLengthLimit = ConfigDOM.getHtmlElement("textLengthLimit") as HTMLInputElement
         const webhookUrlInput = ConfigDOM.getHtmlElement("webhookUrl") as HTMLInputElement
         const webhookUsernameInput = ConfigDOM.getHtmlElement("webhookUsername") as HTMLInputElement
@@ -66,13 +67,19 @@ class ConfigurationPage {
         const redactUrlOriginEl = ConfigDOM.getHtmlElement('redactUrlOrigin') as HTMLInputElement | null
 
         const errorsDisabledSet = new Set(configuration.errorsDisabledUrls || [])
+        const allNetworkRequestsSet = new Set(configuration.allNetworkRequestsUrls || [])
         urlInputs.forEach((input, index) => {
             (input as HTMLInputElement).value = configuration.allowedUrls[index] || ''
             const urlEntry = input.closest('.url-entry')
-            const checkbox = urlEntry?.querySelector('.skip-errors-checkbox') as HTMLInputElement | null
-            if (checkbox) {
+            const errorsDisabledCheckbox = urlEntry?.querySelector('.skip-errors-checkbox') as HTMLInputElement | null
+            if (errorsDisabledCheckbox) {
                 const origin = configuration.allowedUrls[index] || ''
-                checkbox.checked = errorsDisabledSet.has(origin)
+                errorsDisabledCheckbox.checked = errorsDisabledSet.has(origin)
+            }
+            const allNetworkRequestsCheckbox = urlEntry?.querySelector('.monitor-network-requests-checkbox') as HTMLInputElement | null
+            if (allNetworkRequestsCheckbox) {
+                const origin = configuration.allowedUrls[index] || ''
+                allNetworkRequestsCheckbox.checked = allNetworkRequestsSet.has(origin)
             }
         })
         uiErrorInputs.forEach((input, index) => {
@@ -110,6 +117,8 @@ class ConfigurationPage {
             userActionsLimit.value = configuration.userActionsLimit.toString()
         if (errorsLimit)
             errorsLimit.value = configuration.errorsLimit.toString()
+        if (networkRequestsLimit)
+            networkRequestsLimit.value = configuration.networkRequestsLimit.toString()
         if (textLengthLimit)
             textLengthLimit.value = configuration.textLengthLimit?.toString()
         if (redactUrlQueryEl)
@@ -125,6 +134,7 @@ class ConfigurationPage {
 
         ConfigIntegrations.syncIntegrationSections()
         DynamicFields.toggleUiSelectorsVisibility(configuration.errorMonitoring.ui)
+        DynamicFields.toggleNetworkRequestsLimitVisibility()
         ConfigIntegrations.toggleApiUrl()
     }
 
@@ -151,8 +161,16 @@ class ConfigurationPage {
 
         ConfigDOM.getHtmlElement("urls-container")?.addEventListener('click', (e) => {
             const target = e.target as HTMLElement
-            if (target.classList.contains('btn-remove'))
+            if (target.classList.contains('btn-remove')) {
                 DynamicFields.removeUrlField(target)
+                DynamicFields.toggleNetworkRequestsLimitVisibility()
+            }
+        })
+
+        ConfigDOM.getHtmlElement("urls-container")?.addEventListener('change', (e) => {
+            const target = e.target as HTMLElement
+            if (target.classList.contains('monitor-network-requests-checkbox'))
+                DynamicFields.toggleNetworkRequestsLimitVisibility()
         })
 
         ConfigDOM.getHtmlElement("ui-errors-container")?.addEventListener('click', (e) => {

@@ -22,12 +22,16 @@
 
     <div class="stats">
         <div class="stat-card stat-card-user-actions">
-            <h3 data-i18n-key="popup_user_actions">User Actions</h3>
             <span id="userActionsCount">0</span>
+            <h3 data-i18n-key="popup_user_actions">User Actions</h3>
         </div>
         <div class="stat-card stat-card-errors">
-            <h3 data-i18n-key="popup_errors">Errors</h3>
             <span id="errorsCount">0</span>
+            <h3 data-i18n-key="popup_errors">Errors</h3>
+        </div>
+        <div class="stat-card stat-card-network-requests" id="networkRequestsStatCard">
+            <span id="networkRequestsCount">0</span>
+            <h3 data-i18n-key="popup_network_requests">Network Requests</h3>
         </div>
     </div>
 
@@ -39,6 +43,16 @@
     <div class="recent-errors">
         <h3 data-i18n-key="popup_recent_errors">Recent Errors</h3>
         <div id="errorsList" class="errors-list"></div>
+    </div>
+
+    <div class="recent-network-requests" id="recentNetworkRequestsSection">
+        <div class="recent-network-requests-head">
+            <h3 data-i18n-key="popup_recent_network_requests">Recent Network Requests</h3>
+            <button type="button" id="downloadNetworkRequests" class="btn btn-secondary btn-inline"
+                    data-i18n-key="popup_download_network_requests">Download all
+            </button>
+        </div>
+        <div id="networkRequestsList" class="network-requests-list"></div>
     </div>
 
     <div id="latestResponseSection" class="latest-response-section" style="display: none;">

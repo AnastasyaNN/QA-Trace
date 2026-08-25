@@ -13,6 +13,7 @@ When tracking is active on an allowed origin, QA Trace collects:
 - **User actions** — event type (click, input, select, change, tab open/reload), element selector, optional input value, timestamp, tab URL, and tab title.
 - **Console errors** — error message, stack trace, and timestamp.
 - **Network errors** — HTTP method, URL, status code, request/response headers and body, and timestamp.
+- **Network requests** — when **Track all fetch/XHR requests** is enabled for an origin, the same fields (method, URL, status, request/response headers and body, timestamp) are recorded for successful `fetch`/`XMLHttpRequest` calls as well, not only failures.
 - **UI error screenshots** — a base64-encoded PNG image of the visible tab area captured when a UI error is detected.
 
 QA Trace does **not** collect data on pages outside your configured Allowed URLs list. Password input values are never captured.
@@ -21,8 +22,8 @@ QA Trace does **not** collect data on pages outside your configured Allowed URLs
 
 QA Trace applies automatic redaction before storing data:
 
-- **URL query strings and hash fragments** are stripped by default to prevent accidental storage of tokens or session identifiers.
-- **Sensitive HTTP headers** (Authorization, Cookie, X-API-Key, and other token-bearing headers) are removed from stored network error data.
+- **URL query strings** are stripped by default to prevent accidental storage of tokens or session identifiers. Hash route paths are kept so the page stays identifiable, but any query or credentials inside the fragment are removed.
+- **Sensitive HTTP headers** (Authorization, Cookie, X-API-Key, and other token-bearing headers) are removed from stored network error and tracked-request data.
 - **Sensitive body fields** (password, token, api_key, session, and similar) are replaced with `[REDACTED]`.
 
 ## 3. Data storage
@@ -30,7 +31,7 @@ QA Trace applies automatic redaction before storing data:
 - All collected data is stored in `browser.storage.local` on your device.
 - **URLs are stored with their origin intact** by default; the origin (protocol and host) is removed only before data leaves the browser (see Section 4).
 - Stored data **automatically expires after 12 hours**.
-- Storage is subject to configurable limits (actions, errors, screenshots, network payloads).
+- Storage is subject to configurable limits (actions, errors, network requests, screenshots, network payloads).
 - You can clear all stored data at any time from the extension popup.
 
 ## 4. External data transmission

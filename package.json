@@ -1,6 +1,6 @@
 {
   "name": "qa_trace",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Track user actions, monitor errors and prepare prompts to generate bug reports and exploratory testing report",
   "type": "module",
   "scripts": {
@@ -17,10 +17,10 @@
     "@types/node": "^25.9.1",
     "@types/webextension-polyfill": "^0.12.5",
     "cross-env": "^10.1.0",
+    "npm-check-updates": "^22.2.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.14",
     "vite-plugin-web-extension": "^4.5.1",
-    "npm-check-updates": "^22.2.1",
     "vitest": "^4.1.7",
     "retire": "^5.4.3"
   },

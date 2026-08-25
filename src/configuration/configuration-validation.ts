@@ -54,12 +54,12 @@ export class ConfigValidation {
         return uniqueOrigins
     }
 
-    static getErrorsDisabledUrlsFromUI(): string[] {
+    static getUrlsFromUIByConfigType(checkBoxType: "skip-errors-checkbox" | "monitor-network-requests-checkbox"): string[] {
         const urlEntries = document.querySelectorAll('.url-entry')
         const origins: string[] = []
 
         urlEntries.forEach(entry => {
-            const checkbox = entry.querySelector('.skip-errors-checkbox') as HTMLInputElement | null
+            const checkbox = entry.querySelector(`.${checkBoxType}`) as HTMLInputElement | null
             const urlInput = entry.querySelector('.url-input') as HTMLInputElement | null
             if (!checkbox?.checked || !urlInput)
                 return

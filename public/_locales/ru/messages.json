@@ -4,9 +4,11 @@
   "actionTitle": { "message": "QA Trace" },
 
   "popup_user_actions": { "message": "Действия пользователя" },
-  "popup_recent_actions": { "message": "Недавние действия" },
+  "popup_recent_actions": { "message": "Последние действия" },
   "popup_errors": { "message": "Ошибки" },
-  "popup_recent_errors": { "message": "Недавние ошибки" },
+  "popup_network_requests": { "message": "Сетевые запросы" },
+  "popup_recent_errors": { "message": "Последние ошибки" },
+  "popup_recent_network_requests": { "message": "Последние сетевые запросы" },
   "popup_get_prompt": { "message": "Сгенерировать промт" },
   "popup_configuration": { "message": "Настройки" },
   "popup_clear_data": { "message": "Очистить данные" },
@@ -54,6 +56,7 @@
   "popup_send_to_llm": { "message": "Отправить в LLM" },
   "popup_no_errors_detected": { "message": "Ошибок не обнаружено" },
   "popup_no_actions_detected": { "message": "Действия не записаны" },
+  "popup_no_network_requests": { "message": "Запросы не записаны" },
   "popup_available_actions": { "message": "$1 доступно" },
   "popup_configuration_preview_actions": {"message": "• Включает $1 действий\n• Сфокусирован на шагах, относящихся к ошибкам\n• Формат, подходящий для баг-треккинговых систем\n"},
   "popup_configuration_preview_document": {"message": "• Включает $1 действий\n• Только действия (документация)\n• Тот же промт шагов, без ошибок\n"},
@@ -79,6 +82,7 @@
   "popup_passphrase_ok": { "message": "OK" },
   "popup_error_copy": { "message": "Копировать" },
   "popup_error_copy_screenshot": { "message": "Снимок" },
+  "popup_download_network_requests": { "message": "Скачать все" },
 
   "popup_webhook_triggered_suc": {"message":  "Webhook вызван успешно."},
   "popup_no_tracked_tabs": {"message":  "Нет доступных вкладок."},
@@ -139,11 +143,13 @@
   "config_limits": {"message":  "Лимиты"},
   "config_user_actions_limit": {"message":  "Количество действий пользователя"},
   "config_errors_limit": {"message":  "Количество ошибок"},
+  "config_network_requests_limit": {"message":  "Количество сетевых запросов"},
   "config_text_length_limit": {"message":  "Длина текста"},
   "config_text_length_limit_desc": {"message":  "Максимальное количество знаков для значений, меток и сообщений об ошибках."},
   "config_do_not_monitor_errors_for_URL": {"message": "Не отслеживать ошибки для этого URL"},
-  "config_redact_url_query": {"message": "Не сохранять query и hash для URL"},
-  "config_redact_url_query_desc": {"message": "URL вкладок, действия открытия/перезагрузки и URL запросов в сетевых ошибках сохраняются как host + путь."},
+  "config_monitor_network_for_URL": {"message": "Записывать все fetch/XHR запросы для этого URL"},
+  "config_redact_url_query": {"message": "Не сохранять query для URL"},
+  "config_redact_url_query_desc": {"message": "URL вкладок, действия открытия/перезагрузки и URL запросов в сетевых ошибках сохраняются без query. Путь hash-маршрута сохраняется, но query и учётные данные внутри фрагмента удаляются."},
   "config_redact_url_origin": {"message": "Убирать origin (протокол и хост) из промтов"},
   "config_redact_url_origin_desc": {"message": "Протокол и хост убираются из URL вкладок, действий и запросов в сгенерированных промтах (например /dashboard вместо https://example.com/dashboard)."},
   "config_finish": {"message":  "Сохранить"},
@@ -159,6 +165,8 @@
   "config_invalid_url": {"message": "Некорректный адрес: $1"},
   "config_allowed_url_protocol_error": {"message": "Поддерживаются только http/https адреса: $1"},
   "config_select_monitoring_type_error": {"message": "Выберите хотя бы один тип мониторинга ошибок"},
-  "config_add_ui_selector_error": {"message": "Добавьте хотя бы один селектор для UI-ошибок"}
+  "config_add_ui_selector_error": {"message": "Добавьте хотя бы один селектор для UI-ошибок"},
+  "storage_write_failed": {"message": "Не удалось сохранить отслеживаемые данные из-за ошибки хранилища браузера. Часть действий или ошибок этой сессии может отсутствовать."},
+  "storage_quota_dropped": {"message": "Хранилище браузера переполнено. QA Trace удалил самые старые данные, чтобы продолжить запись сессии."}
 }
 

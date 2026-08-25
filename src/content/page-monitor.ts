@@ -1,41 +1,50 @@
-import {ErrorLog} from "../lib/types";
+import {ErrorLog, NetworkRequestLog} from "../lib/types";
 import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {TextUtils} from "../lib/text";
 import {Messaging} from "../lib/messaging";
 
-export class ErrorDetector {
-    private static instance: ErrorDetector
+export class PageMonitor {
+    private static instance: PageMonitor
     private consoleTrackingEnabled = false
     private networkTrackingEnabled = false
+    private fullNetworkTrackingEnabled = false
     private uiObservers: MutationObserver[] = []
-    private pageHooksInjected = false
+    private pageHooksReady?: Promise<void>
     private pageMessageListenerAdded = false
     private readonly pageMessageToken = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
     private toastContainer: HTMLElement | null = null
     private activeUiToastAnchors: WeakMap<HTMLElement, number> = new WeakMap()
     private readonly toastLifetimeMs = 6400
 
-    static getInstance(): ErrorDetector {
-        if (!ErrorDetector.instance)
-            ErrorDetector.instance = new ErrorDetector()
-        return ErrorDetector.instance
+    static getInstance(): PageMonitor {
+        if (!PageMonitor.instance)
+            PageMonitor.instance = new PageMonitor()
+        return PageMonitor.instance
     }
 
     async setupConsoleErrorTracking() {
         if (this.consoleTrackingEnabled)
             return
         this.consoleTrackingEnabled = true
-        await this.ensurePageHooksInjected()
         await this.ensurePageMessageListener()
+        await this.syncPageHooksConfig()
     }
 
     async setupNetworkErrorTracking() {
         if (this.networkTrackingEnabled)
             return
         this.networkTrackingEnabled = true
-        await this.ensurePageHooksInjected()
         await this.ensurePageMessageListener()
+        await this.syncPageHooksConfig()
+    }
+
+    async setupFullNetworkTracking() {
+        if (this.fullNetworkTrackingEnabled)
+            return
+        this.fullNetworkTrackingEnabled = true
+        await this.ensurePageMessageListener()
+        await this.syncPageHooksConfig()
     }
 
     setupUIErrorTracking(selectors: string[] = ['div[id^="__error"]']) {
@@ -107,6 +116,16 @@ export class ErrorDetector {
         })
     }
 
+    private async recordNetworkRequest(request: Omit<NetworkRequestLog, 'timestamp' | 'tabInfo'>): Promise<void> {
+        await Messaging.safeSendMessage({
+            type: 'NETWORK_REQUEST_DETECTED',
+            data: {
+                ...request,
+                timestamp: Date.now()
+            }
+        })
+    }
+
     private async ensurePageMessageListener() {
         if (this.pageMessageListenerAdded)
             return
@@ -120,16 +139,26 @@ export class ErrorDetector {
             if (!kind || !payload)
                 return
 
-            if (kind === 'console') {
+            if (kind === 'console' && this.consoleTrackingEnabled) {
                 void this.recordError({
                     type: 'console',
                     message: payload.message,
                     stack: payload.stack
                 })
-            } else if (kind === 'network') {
+            } else if (kind === 'network' && this.networkTrackingEnabled) {
                 void this.recordError({
                     type: 'network',
                     message: payload.message,
+                    status: payload.status,
+                    method: payload.method,
+                    urlRequested: payload.urlRequested,
+                    requestHeaders: payload.requestHeaders,
+                    requestBody: payload.requestBody,
+                    responseHeaders: payload.responseHeaders,
+                    responseBody: payload.responseBody
+                })
+            } else if (kind === 'network-request' && this.fullNetworkTrackingEnabled) {
+                void this.recordNetworkRequest({
                     status: payload.status,
                     method: payload.method,
                     urlRequested: payload.urlRequested,
@@ -145,39 +174,50 @@ export class ErrorDetector {
 
 
     /**
-     * Injects page-hooks.js from the extension origin (CSP-safe on strict pages),
-     * then sends runtime init data over window.postMessage.
+     * Injects page-hooks.ts from the extension origin (CSP-safe on strict pages) exactly once.
+     * Resolves once the script has loaded (or failed) so config can be posted to a live listener.
      */
-    private async ensurePageHooksInjected(): Promise<void> {
-        if (this.pageHooksInjected)
-            return
-        this.pageHooksInjected = true
+    private ensurePageHooksInjected(): Promise<void> {
+        if (this.pageHooksReady)
+            return this.pageHooksReady
+        this.pageHooksReady = new Promise<void>((resolve) => {
+            try {
+                const script = document.createElement('script')
+                script.src = browser.runtime.getURL('src/page-hooks/page-hooks.js')
+                script.async = true
+                script.onload = () => {
+                    script.remove()
+                    resolve()
+                }
+                script.onerror = () => {
+                    console.warn('QA Trace: failed to inject page hooks script')
+                    script.remove()
+                    resolve()
+                }
+                const parent = document.head || document.documentElement
+                parent.appendChild(script)
+            } catch (error) {
+                console.warn('QA Trace: failed to initialize page hooks script', error)
+                this.pageHooksReady = undefined
+                resolve()
+            }
+        })
+        return this.pageHooksReady
+    }
 
-        const hooksUrl = browser.runtime.getURL('src/page-hooks/page-hooks.js')
+    // Re-sends the current runtime flags to the page hooks
+    private async syncPageHooksConfig(): Promise<void> {
+        await this.ensurePageHooksInjected()
         try {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
-            const stripUrlQuery = !!configuration.redactUrlQueryParams
-
-            const script = document.createElement('script')
-            script.src = hooksUrl
-            script.async = true
-            script.onload = () => {
-                const targetOrigin = window.location.origin || '*'
-                window.postMessage({
-                    source: 'qa-trace-init',
-                    token: this.pageMessageToken,
-                    stripUrlQuery
-                }, targetOrigin)
-                script.remove()
-            }
-            script.onerror = () => {
-                console.warn('QA Trace: failed to inject page hooks script')
-                script.remove()
-            }
-            (document.head || document.documentElement).appendChild(script)
+            window.postMessage({
+                source: 'qa-trace-init',
+                token: this.pageMessageToken,
+                stripUrlQuery: !!configuration.redactUrlQueryParams,
+                trackAllNetwork: this.fullNetworkTrackingEnabled
+            }, window.location.origin || '*')
         } catch (error) {
-            this.pageHooksInjected = false
-            console.warn('QA Trace: failed to initialize page hooks script', error)
+            console.warn('QA Trace: failed to sync page hooks config', error)
         }
     }
 
@@ -219,6 +259,10 @@ export class ErrorDetector {
 
     private ensureToastContainer() {
         if (this.toastContainer)
+            return
+        // Errors can be captured at document_start, before <body> exists; skip the visual
+        // toast in that case (the error itself is still recorded via messaging).
+        if (!document.body)
             return
         const container = document.createElement('div')
         container.className = 'qa-trace-toast-container'
