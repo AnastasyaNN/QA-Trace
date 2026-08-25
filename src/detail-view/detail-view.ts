@@ -183,8 +183,9 @@ class DetailView {
         if (!button)
             return
         button.innerHTML = ICON_COPY
-        button.addEventListener('click', () => {
-            void ClipboardUtils.writeText(getText())
+        button.addEventListener('click', async () => {
+            if (!(await ClipboardUtils.writeText(getText())))
+                alert(browser.i18n.getMessage('popup_failed_to_copy'))
         })
     }
 

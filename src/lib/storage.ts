@@ -6,6 +6,7 @@ import {SavedResponse} from "../popup/popup-saved-response.ts";
 
 const AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES = 5
 const NETWORK_REQUESTS_KEY = 'networkRequests'
+const RETENTION_MS = 12 * 60 * 60 * 1000
 const DEFAULT_STORAGE: StorageData = {
     userActions: [],
     errors: [],
@@ -20,16 +21,13 @@ export class StorageManager {
     private static batchers: Record<string, {items: any[], pending: Promise<void> | null, flushNow: (() => void) | null}> = {}
     private static batchDelayMs = 300
 
-    static async getStorage(includeNetworkRequests = false): Promise<StorageData> {
-        const keys = includeNetworkRequests ? ['storageData', NETWORK_REQUESTS_KEY] : ['storageData']
-        const result: {[key: string]: any} = await browser.storage.local.get(keys)
+    static async getStorage(): Promise<StorageData> {
+        const result: {[key: string]: any} = await browser.storage.local.get(['storageData'])
         const data = result.storageData || {}
         return {
             userActions: data.userActions || [],
             errors: data.errors || [],
-            networkRequests: includeNetworkRequests
-                ? (result[NETWORK_REQUESTS_KEY] ?? data.networkRequests ?? [])
-                : [],
+            networkRequests: [],
             uiErrorScreenshots: data.uiErrorScreenshots || [],
             networkErrorPayloads: data.networkErrorPayloads || []
         }
@@ -41,24 +39,19 @@ export class StorageManager {
     }
 
     static async getNetworkRequestById(id: string): Promise<NetworkRequestLog | undefined> {
-        const {networkRequests} = await this.getStorage(true)
-        return networkRequests.find((request) => request.id === id)
+        const requests = await this.getNetworkRequests()
+        return requests.find((request) => request.id === id)
     }
 
-    private static async getNetworkRequests(): Promise<NetworkRequestLog[]> {
-        const result: {[key: string]: any} = await browser.storage.local.get([NETWORK_REQUESTS_KEY])
-        return result[NETWORK_REQUESTS_KEY] || []
-    }
-
-    private static async setNetworkRequests(requests: NetworkRequestLog[]): Promise<void> {
-        let current = requests
-        await this.persist(() => ({[NETWORK_REQUESTS_KEY]: current}), () => {
-            const next = this.halve(current)
-            if (!next)
-                return false
-            current = next
-            return true
-        })
+    // Own key, with a read-only fallback to legacy in-blob requests. The blob is read lazily so the
+    // hot path avoids deserializing it. Not migrated on read: a write here would deadlock callers
+    // already running on the 'network' queue.
+    static async getNetworkRequests(): Promise<NetworkRequestLog[]> {
+        const result: {[key: string]: any} = await browser.storage.local.get(NETWORK_REQUESTS_KEY)
+        if (result[NETWORK_REQUESTS_KEY] != null)
+            return result[NETWORK_REQUESTS_KEY]
+        const legacy: {[key: string]: any} = await browser.storage.local.get('storageData')
+        return legacy.storageData?.networkRequests ?? []
     }
 
     static async addUserAction(action: Omit<UserAction, "tabInfo">, currentTabInfo: TabInfo, immediate = false): Promise<void> {
@@ -179,9 +172,10 @@ export class StorageManager {
         const entry: NetworkRequestLog = {id: IdUtils.generate(), ...request, tabInfo: currentTabInfo}
         await this.batchWrite('networkRequests', 'network', entry, async (batch) => {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
-            const networkRequests = await this.getNetworkRequests()
-            batch.forEach((item) => networkRequests.unshift(item))
-            await this.setNetworkRequests(networkRequests.slice(0, configuration.networkRequestsLimit))
+            await this.mutateNetworkRequests((networkRequests) => {
+                batch.forEach((item) => networkRequests.unshift(item))
+                return networkRequests.slice(0, configuration.networkRequestsLimit)
+            })
         })
     }
 
@@ -198,8 +192,8 @@ export class StorageManager {
     }
 
     static async cleanupOldData(): Promise<void> {
-        const twelveHoursAgo = Date.now() - (12 * 60 * 60 * 1000)
-        const isFresh = (timestamp: number) => timestamp > twelveHoursAgo
+        const cutoff = Date.now() - RETENTION_MS
+        const isFresh = (timestamp: number) => timestamp > cutoff
 
         await this.enqueueWrite(async () => {
             const storage = await this.getStorage()
@@ -207,16 +201,32 @@ export class StorageManager {
             storage.errors = storage.errors.filter(error => isFresh(error.timestamp))
             storage.uiErrorScreenshots = storage.uiErrorScreenshots.filter(item => isFresh(item.timestamp))
             storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter(p => isFresh(p.timestamp))
-            await SavedResponse.clearSavedLLMResponse(twelveHoursAgo)
+            await SavedResponse.clearSavedLLMResponse(cutoff)
 
             this.reconcileDependentStorage(storage)
             await this.setStorage(storage)
         }, 'main')
 
-        await this.enqueueWrite(async () => {
-            const requests = await this.getNetworkRequests()
-            await this.setNetworkRequests(requests.filter(request => isFresh(request.timestamp)))
-        }, 'network')
+        await this.enqueueWrite(
+            () => this.mutateNetworkRequests((requests) => requests.filter(request => isFresh(request.timestamp))),
+            'network'
+        )
+    }
+
+    private static async setNetworkRequests(requests: NetworkRequestLog[]): Promise<void> {
+        let current = requests
+        await this.persist(() => ({[NETWORK_REQUESTS_KEY]: current}), () => {
+            const next = this.halve(current)
+            if (!next)
+                return false
+            current = next
+            return true
+        })
+    }
+
+    // Read-modify-write of the network log; callers already run inside the 'network' queue.
+    private static async mutateNetworkRequests(mutator: (requests: NetworkRequestLog[]) => NetworkRequestLog[]): Promise<void> {
+        await this.setNetworkRequests(mutator(await this.getNetworkRequests()))
     }
 
     // Buffers item under key and, once per debounce window, drains the whole batch through one

@@ -39,6 +39,12 @@ function request(timestamp: number, urlRequested: string) {
     return {timestamp, method: 'GET', urlRequested}
 }
 
+async function readStorage() {
+    const storage = await StorageManager.getStorage()
+    storage.networkRequests = await StorageManager.getNetworkRequests()
+    return storage
+}
+
 beforeEach(() => {
     for (const k of Object.keys(store))
         delete store[k]
@@ -59,7 +65,7 @@ describe('StorageManager network requests', () => {
 
     it('getStorage merges the dedicated network key', async () => {
         await StorageManager.addNetworkRequest(request(5, 'u'), tab)
-        const s = await StorageManager.getStorage(true)
+        const s = await readStorage()
         expect(s.networkRequests).toHaveLength(1)
         expect(s.networkRequests[0].urlRequested).toBe('u')
     })
@@ -69,7 +75,7 @@ describe('StorageManager network requests', () => {
         await StorageManager.addError({type: 'console', message: 'boom', timestamp: 2}, tab)
         expect(store.networkRequests).toHaveLength(1)
         expect(store.storageData.networkRequests).toHaveLength(0)
-        const s = await StorageManager.getStorage(true)
+        const s = await readStorage()
         expect(s.errors).toHaveLength(1)
         expect(s.networkRequests).toHaveLength(1)
     })
@@ -89,7 +95,7 @@ describe('StorageManager network requests', () => {
             uiErrorScreenshots: [],
             networkErrorPayloads: []
         }
-        const s = await StorageManager.getStorage(true)
+        const s = await readStorage()
         expect(s.networkRequests).toHaveLength(1)
         expect(s.networkRequests[0].urlRequested).toBe('legacy')
     })
@@ -112,7 +118,7 @@ describe('StorageManager network requests', () => {
         await StorageManager.clearData()
         expect(store.networkRequests).toHaveLength(0)
         expect(store.storageData.userActions).toHaveLength(0)
-        const s = await StorageManager.getStorage(true)
+        const s = await readStorage()
         expect(s.networkRequests).toHaveLength(0)
         expect(s.errors).toHaveLength(0)
     })

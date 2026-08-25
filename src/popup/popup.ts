@@ -49,7 +49,9 @@ class PopupManager {
             PopupDOM.showConfigureError(browser.i18n.getMessage('popup_failed_to_cleanup_old_data'))
         }
 
-        this.popupContext.storageData = await StorageManager.getStorage(true)
+        const storageData = await StorageManager.getStorage()
+        storageData.networkRequests = await StorageManager.getNetworkRequests()
+        this.popupContext.storageData = storageData
         this.popupContext.configuration = await ExtensionConfigurationManager.getConfiguration()
         PromptConfirmation.updateSendToLLMOrTriggerWebhookVisibility(this.popupContext)
     }
@@ -161,9 +163,12 @@ class PopupManager {
 
         const networkTrackingEnabled = !!this.popupContext.configuration?.allNetworkRequestsUrls?.length
         const networkRequests = this.popupContext.storageData.networkRequests
+        // Keep already-captured requests reachable even after tracking is turned off for the origin.
+        const showNetwork = networkTrackingEnabled || networkRequests.length > 0
 
-        PopupDOM.toggleVisible('networkRequestsStatCard', networkTrackingEnabled)
-        PopupDOM.toggleVisible('recentNetworkRequestsSection', networkTrackingEnabled)
+        PopupDOM.toggleVisible('networkRequestsStatCard', showNetwork)
+        PopupDOM.getHtmlElement('statsGrid')?.classList.toggle('stats-with-network', showNetwork)
+        PopupDOM.toggleVisible('recentNetworkRequestsSection', showNetwork)
         PopupDOM.toggleVisible('downloadNetworkRequests', networkRequests.length > 0)
 
         const networkRequestsCount = PopupDOM.getHtmlElement('networkRequestsCount')

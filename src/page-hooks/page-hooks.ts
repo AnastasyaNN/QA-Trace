@@ -1,6 +1,6 @@
 // Runtime init (token/redaction flag) is sent by content script via window.postMessage.
 
-import {BodyRedaction, MAX_RESPONSE_CHARS, MAX_BODY_REDACT_CHARS, MAX_STORED_RESPONSE_CHARS} from "../lib/body-redaction";
+import {BodyRedaction, MAX_RESPONSE_CHARS, MAX_BODY_REDACT_CHARS, MAX_STORED_RESPONSE_BYTES} from "../lib/body-redaction";
 
 type PostKind = 'console' | 'network' | 'network-request';
 
@@ -83,7 +83,25 @@ class QaTracePageHooks {
         if (w.__qaTraceHooksInstalled)
             return
         w.__qaTraceHooksInstalled = true
-        new QaTracePageHooks().attach()
+        const hooks = new QaTracePageHooks()
+        hooks.seedFromScriptTag()
+        hooks.attach()
+    }
+
+    // trackAll/disableBodyTruncation arrive in the injected script's URL fragment so capture is
+    // gated and the body cap is set before the first request, not read-then-discarded. Runs while
+    // document.currentScript is still valid.
+    private seedFromScriptTag(): void {
+        try {
+            const src = (document.currentScript as HTMLScriptElement | null)?.src || ''
+            const hash = src.includes('#') ? src.slice(src.indexOf('#') + 1) : ''
+            const params = new URLSearchParams(hash)
+            if (params.get('trackAll') === '1')
+                this.trackAllNetwork = true
+            if (params.get('disableBodyTruncation') === '1')
+                this.disableBodyTruncation = true
+        } catch {
+        }
     }
 
     private attach(): void {
@@ -106,12 +124,9 @@ class QaTracePageHooks {
         this.shouldStripUrlQuery = this.initialized
             ? this.shouldStripUrlQuery || !!event.data.stripUrlQuery
             : !!event.data.stripUrlQuery
-        // Ratchet on for the page lifetime: a reordered or stray re-sync can't silently disable capture.
-        // Mid-session disable is not supported (config changes take effect on reload).
         this.trackAllNetwork = this.trackAllNetwork || !!event.data.trackAllNetwork
-        this.disableBodyTruncation = this.initialized
-            ? this.disableBodyTruncation && !!event.data.disableBodyTruncation
-            : !!event.data.disableBodyTruncation
+        if (!this.initialized)
+            this.disableBodyTruncation = this.disableBodyTruncation || !!event.data.disableBodyTruncation
         this.initialized = true
         this.flushPending()
     }
@@ -205,8 +220,14 @@ class QaTracePageHooks {
     }
 
     private pushPending(entry: PendingEvent): void {
-        if (this.pending.length >= QaTracePageHooks.MAX_PENDING_EVENTS)
-            this.pending.shift()
+        if (this.pending.length >= QaTracePageHooks.MAX_PENDING_EVENTS) {
+            // Evict a network-request before a console/network error, which is the higher-value signal.
+            const evictable = this.pending.findIndex((e) => e.kind === 'network-request')
+            if (evictable >= 0)
+                this.pending.splice(evictable, 1)
+            else
+                this.pending.shift()
+        }
         this.pending.push(entry)
     }
 
@@ -305,8 +326,8 @@ class QaTracePageHooks {
 
     // exact size is known for XHR (full responseText is in memory); a streamed fetch body is only
     // read up to the cap, so its size is reported as a lower bound.
-    private static responseTooLarge(chars: number, exact: boolean): string {
-        const size = QaTracePageHooks.formatBytes(chars)
+    private static responseTooLarge(bytes: number, exact: boolean): string {
+        const size = QaTracePageHooks.formatBytes(bytes)
         return `[QA Trace: response body too large to store — ${exact ? size : 'over ' + size}]`
     }
 
@@ -318,41 +339,52 @@ class QaTracePageHooks {
         return bytes + ' B'
     }
 
+    private static byteLength(str: string): number {
+        return new TextEncoder().encode(str).length
+    }
+
     private async readResponseBody(response: Response): Promise<string> {
         try {
             if (this.isBinaryContentType(response.headers.get('content-type')))
                 return ''
-            const {text, overflow} = await this.readCappedText(response, MAX_STORED_RESPONSE_CHARS)
-            if (overflow)
-                return QaTracePageHooks.responseTooLarge(text.length, false)
+            // Truncating mode never keeps more than redactCap, so don't buffer up to 9 MB to slice
+            // it away; the "too large" marker is only meaningful when storing full bodies.
+            const cap = this.disableBodyTruncation ? MAX_STORED_RESPONSE_BYTES : this.redactCap
+            const {text, bytes, overflow} = await this.readCappedText(response, cap)
+            if (overflow && this.disableBodyTruncation)
+                return QaTracePageHooks.responseTooLarge(bytes, false)
             return BodyRedaction.redact(text, this.redactCap, this.responseCap)
         } catch (error) {
             return QaTracePageHooks.responseBodyUnavailable(error)
         }
     }
 
-    // Reads at most cap chars from the (cloned) body, then cancels so we never buffer a large or
-    // streaming body; overflow is true when the source held more than cap.
-    private async readCappedText(source: Request | Response, cap: number): Promise<{text: string, overflow: boolean}> {
+    // Reads at most cap bytes from the (cloned) body, then cancels so we never buffer a large or
+    // streaming body; overflow is true when the source held more than cap. Cap is bytes because the
+    // storage.local quota is bytes; output length is bounded downstream by responseCap.
+    private async readCappedText(source: Request | Response, cap: number): Promise<{text: string, bytes: number, overflow: boolean}> {
         const body = source.body
         if (!body) {
             const full = await source.text()
-            return {text: full.slice(0, cap), overflow: full.length > cap}
+            const bytes = QaTracePageHooks.byteLength(full)
+            return {text: full, bytes, overflow: bytes > cap}
         }
         const reader = body.getReader()
         const decoder = new TextDecoder()
         let out = ''
+        let bytes = 0
         try {
-            while (out.length <= cap) {
+            while (bytes <= cap) {
                 const {done, value} = await reader.read()
                 if (done)
-                    return {text: out + decoder.decode(), overflow: false}
+                    return {text: out + decoder.decode(), bytes, overflow: false}
+                bytes += value.byteLength
                 out += decoder.decode(value, {stream: true})
             }
         } finally {
             void reader.cancel()
         }
-        return {text: out.slice(0, cap), overflow: true}
+        return {text: out, bytes, overflow: true}
     }
 
     private readXhrResponseBody(xhr: XMLHttpRequest): string {
@@ -367,8 +399,12 @@ class QaTracePageHooks {
                     : ''
             if (!raw)
                 return ''
-            if (raw.length > MAX_STORED_RESPONSE_CHARS)
-                return QaTracePageHooks.responseTooLarge(raw.length, true)
+            // UTF-8 is at most 3 bytes per UTF-16 code unit, so skip the encode when it can't overflow.
+            if (raw.length * 3 > MAX_STORED_RESPONSE_BYTES) {
+                const bytes = QaTracePageHooks.byteLength(raw)
+                if (bytes > MAX_STORED_RESPONSE_BYTES)
+                    return QaTracePageHooks.responseTooLarge(bytes, true)
+            }
             return BodyRedaction.redact(raw, this.redactCap, this.responseCap)
         } catch (error) {
             return QaTracePageHooks.responseBodyUnavailable(error)
@@ -390,7 +426,7 @@ class QaTracePageHooks {
     }
 
     private shouldRecordRequest(status: number): boolean {
-        return (this.trackAllNetwork || !this.initialized) && status !== 0
+        return this.trackAllNetwork && status !== 0
     }
 
     private emitNetworkEvent(isError: boolean, shouldRecordRequest: boolean, errorMessage: string, payload: NetworkRequestPayload): void {

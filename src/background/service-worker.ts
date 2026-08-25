@@ -5,6 +5,7 @@ import {ExtensionConfigurationManager} from "../lib/integrations";
 import {ScreenshotUtils} from "../lib/screenshots";
 import {AllowedOrigins} from "../lib/allowed-origins";
 import {UrlPrivacy} from "../lib/url-privacy";
+import {BodyRedaction} from "../lib/body-redaction";
 import {Runtime} from "webextension-polyfill";
 import MessageSender = Runtime.MessageSender;
 
@@ -142,6 +143,9 @@ function truncateHeadersRecord(input: unknown): Record<string, string> | undefin
         return undefined
     }
     for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+        // Defense in depth: re-drop sensitive headers in the trusted worker, not only in the page hook.
+        if (BodyRedaction.isSensitiveKey(k))
+            continue
         out[truncateField(k, 200)] = truncateField(String(v ?? ''), MAX_TEXT_FIELD_LENGTH)
     }
     return Object.keys(out).length
@@ -167,11 +171,11 @@ function sanitizeNetworkFields(input: any, redactUrlQuery: boolean, disableBodyT
         urlRequested,
         requestHeaders: truncateHeadersRecord(input.requestHeaders),
         requestBody: input.requestBody
-            ? truncateField(input.requestBody, bodyMax)
+            ? truncateField(BodyRedaction.redactTokenPatterns(String(input.requestBody)), bodyMax)
             : undefined,
         responseHeaders: truncateHeadersRecord(input.responseHeaders),
         responseBody: input.responseBody
-            ? truncateField(input.responseBody, bodyMax)
+            ? truncateField(BodyRedaction.redactTokenPatterns(String(input.responseBody)), bodyMax)
             : undefined
     }
 }

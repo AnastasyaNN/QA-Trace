@@ -178,13 +178,17 @@ export class PageMonitor {
      * Injects page-hooks.ts from the extension origin (CSP-safe on strict pages) exactly once.
      * Resolves once the script has loaded (or failed) so config can be posted to a live listener.
      */
-    private ensurePageHooksInjected(): Promise<void> {
+    private ensurePageHooksInjected(disableBodyTruncation: boolean): Promise<void> {
         if (this.pageHooksReady)
             return this.pageHooksReady
         this.pageHooksReady = new Promise<void>((resolve) => {
             try {
                 const script = document.createElement('script')
-                script.src = browser.runtime.getURL('src/page-hooks/page-hooks.js')
+                // trackAll/disableBodyTruncation in the fragment let the hooks gate capture and set
+                // the body cap at install time, before the async init message arrives.
+                const trackAll = this.fullNetworkTrackingEnabled ? '1' : '0'
+                const noTruncation = disableBodyTruncation ? '1' : '0'
+                script.src = `${browser.runtime.getURL('src/page-hooks/page-hooks.js')}#trackAll=${trackAll}&disableBodyTruncation=${noTruncation}`
                 script.async = true
                 script.onload = () => {
                     script.remove()
@@ -208,9 +212,9 @@ export class PageMonitor {
 
     // Re-sends the current runtime flags to the page hooks
     private async syncPageHooksConfig(): Promise<void> {
-        await this.ensurePageHooksInjected()
         try {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
+            await this.ensurePageHooksInjected(!!configuration.disableBodyTruncation)
             window.postMessage({
                 source: 'qa-trace-init',
                 token: this.pageMessageToken,
@@ -219,6 +223,7 @@ export class PageMonitor {
                 disableBodyTruncation: !!configuration.disableBodyTruncation
             }, window.location.origin || '*')
         } catch (error) {
+            await this.ensurePageHooksInjected(false)
             console.warn('QA Trace: failed to sync page hooks config', error)
         }
     }

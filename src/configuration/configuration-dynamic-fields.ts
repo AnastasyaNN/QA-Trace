@@ -85,13 +85,16 @@ export class DynamicFields {
             selectorItem.remove()
     }
 
+    private static anyFullNetworkUrlEnabled(): boolean {
+        return Array.from(document.querySelectorAll('.monitor-network-requests-checkbox'))
+            .some(checkbox => (checkbox as HTMLInputElement).checked)
+    }
+
     static toggleNetworkRequestsLimitVisibility(): void {
         const group = ConfigDOM.getHtmlElement("networkRequestsLimitGroup")
         if (!group)
             return
-        const anyEnabled = Array.from(document.querySelectorAll('.monitor-network-requests-checkbox'))
-            .some(checkbox => (checkbox as HTMLInputElement).checked)
-        group.style.display = anyEnabled ? 'block' : 'none'
+        group.style.display = this.anyFullNetworkUrlEnabled() ? 'block' : 'none'
     }
 
     static toggleBodyTruncationVisibility(): void {
@@ -99,9 +102,7 @@ export class DynamicFields {
         if (!group)
             return
         const networkErrors = (ConfigDOM.getHtmlElement("monitorNetwork") as HTMLInputElement | null)?.checked
-        const fullNetwork = Array.from(document.querySelectorAll('.monitor-network-requests-checkbox'))
-            .some(checkbox => (checkbox as HTMLInputElement).checked)
-        group.style.display = networkErrors || fullNetwork ? 'block' : 'none'
+        group.style.display = networkErrors || this.anyFullNetworkUrlEnabled() ? 'block' : 'none'
     }
 
     static toggleUiSelectorsVisibility(enabled: boolean): void {

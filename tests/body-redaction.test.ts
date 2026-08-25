@@ -19,6 +19,19 @@ describe('BodyRedaction.redact — JSON bodies', () => {
         expect(out).toContain('"X-CSRF-Token":"[REDACTED]"')
         expect(out).toContain('"userPassword":"[REDACTED]"')
     })
+
+    it('keeps non-string values under sensitive keys (numbers/booleans are not secrets)', () => {
+        const out = BodyRedaction.redact('{"session_count":5,"jwt_enabled":false,"access_token":"s3cr3t"}')
+        expect(out).toContain('"session_count":5')
+        expect(out).toContain('"jwt_enabled":false')
+        expect(out).toContain('"access_token":"[REDACTED]"')
+    })
+
+    it('still redacts string and structured values under sensitive keys', () => {
+        const out = BodyRedaction.redact('{"credentials":{"user":"a","pass":"b"},"tokens":["x","y"]}')
+        expect(out).toContain('"credentials":"[REDACTED]"')
+        expect(out).toContain('"tokens":"[REDACTED]"')
+    })
 })
 
 describe('BodyRedaction.redact — non-JSON bodies', () => {
@@ -56,6 +69,24 @@ describe('BodyRedaction.redact — non-JSON bodies', () => {
     it('truncates the redacted output to the response cap', () => {
         const out = BodyRedaction.redact('note=' + 'a'.repeat(MAX_RESPONSE_CHARS * 2), MAX_BODY_REDACT_CHARS, MAX_RESPONSE_CHARS)
         expect(out.length).toBeLessThanOrEqual(MAX_RESPONSE_CHARS)
+    })
+})
+
+describe('BodyRedaction.redact — oversized/unparseable JSON falls back to key redaction', () => {
+    it('redacts JSON-quoted sensitive keys when the body is too large to JSON.parse', () => {
+        // Body exceeds the redact cap, so redact() truncates it into invalid JSON and hits the
+        // key/value fallback; the sensitive field (in the retained prefix) must still be redacted.
+        const body = '{"password":"hunter2","pad":"' + 'a'.repeat(150_000) + '"}'
+        const out = BodyRedaction.redact(body, MAX_BODY_REDACT_CHARS, MAX_RESPONSE_CHARS)
+        expect(out).not.toContain('hunter2')
+        expect(out).toContain('[REDACTED]')
+    })
+
+    it('redacts JSON-quoted sensitive keys in an invalid-JSON fragment', () => {
+        const out = BodyRedaction.redact('{"token":"abc","user":"bob"')
+        expect(out).toContain('"token":"[REDACTED]"')
+        expect(out).toContain('"user":"bob"')
+        expect(out).not.toContain('abc')
     })
 })
 

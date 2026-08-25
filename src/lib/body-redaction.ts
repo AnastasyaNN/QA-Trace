@@ -17,18 +17,21 @@ const SENSITIVE_PATTERNS: readonly string[] = [
     'credential'
 ]
 
-// Bounded key + required [=:] anchor + value; no overlapping unbounded quantifiers, so no ReDoS.
-const KEY_VALUE_REGEX = /([A-Za-z0-9_.\-\[\]]{1,64})([ \t]*[=:][ \t]*)("[^"]*"|'[^']*'|[^&;\r\n]*)/g
+// Bounded (optionally quoted) key + required [=:] anchor + value; no overlapping unbounded
+// quantifiers, so no ReDoS. The optional key quotes let the fallback redact JSON-quoted keys
+// ("password":"x") in bodies too large to JSON.parse.
+const KEY_VALUE_REGEX = /(["']?[A-Za-z0-9_.\-\[\]]{1,64}["']?)([ \t]*[=:][ \t]*)("[^"]*"|'[^']*'|[^&;\r\n]*)/g
 const SENSITIVE_KEY_REGEX = new RegExp(`(?:${SENSITIVE_PATTERNS.join('|')})`, 'i')
 const JWT_REGEX = /eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+/g
 const BEARER_REGEX = /\bBearer\s+[A-Za-z0-9._\-]+/gi
 
 export const MAX_RESPONSE_CHARS = 12_000
 export const MAX_BODY_REDACT_CHARS = 100_000
-// Hard ceiling on a stored response body, independent of the truncation setting: a body over this
-// is dropped for a size marker so an oversized response can never overflow the ~10 MB storage.local
-// quota and lose the whole request row. Kept just under the quota to leave room for the rest.
-export const MAX_STORED_RESPONSE_CHARS = 9_000_000
+// Hard ceiling (in bytes) on a stored response body, independent of the truncation setting: a body
+// over this is dropped for a size marker so an oversized response can never overflow the ~10 MB
+// storage.local quota and lose the whole request row. Kept just under the quota to leave room for
+// the rest.
+export const MAX_STORED_RESPONSE_BYTES = 9_000_000
 
 export class BodyRedaction {
     static isSensitiveKey(name: string): boolean {
@@ -83,10 +86,15 @@ export class BodyRedaction {
             return value
         const redacted: Record<string, unknown> = {}
         Object.entries(value).forEach(([key, val]) => {
-            redacted[key] = this.isSensitiveKey(key)
+            redacted[key] = this.isSensitiveKey(key) && this.isRedactableValue(val)
                 ? '[REDACTED]'
                 : this.redactParsedJson(val, depth + 1)
         })
         return redacted
+    }
+
+    // Numbers/booleans/null are never secrets, so session_count:5 keeps its value.
+    private static isRedactableValue(value: unknown): boolean {
+        return typeof value === 'string' || (typeof value === 'object' && value !== null)
     }
 }
