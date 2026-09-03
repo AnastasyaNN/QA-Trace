@@ -13,16 +13,14 @@
     "retire": "retire --path dist --nocache --verbose --colors"
   },
   "devDependencies": {
-    "@types/chrome": "^0.1.42",
-    "@types/node": "^25.9.1",
     "@types/webextension-polyfill": "^0.12.5",
     "cross-env": "^10.1.0",
-    "npm-check-updates": "^22.2.1",
-    "typescript": "^6.0.3",
-    "vite": "^8.0.14",
+    "npm-check-updates": "^23.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vite-plugin-web-extension": "^4.5.1",
-    "vitest": "^4.1.7",
-    "retire": "^5.4.3"
+    "vitest": "^4.1.11",
+    "retire": "^5.7.0"
   },
   "dependencies": {
     "webextension-polyfill": "^0.12.0"
