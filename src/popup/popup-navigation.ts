@@ -10,7 +10,7 @@ export class PopupNavigation {
         if (mainView && configureView && promptConfirmationView) {
             configureView.style.display = 'none'
             promptConfirmationView.style.display = 'none'
-            mainView.style.display = 'block'
+            mainView.style.display = 'flex'
         }
     }
 

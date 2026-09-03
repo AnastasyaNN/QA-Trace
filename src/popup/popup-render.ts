@@ -80,32 +80,89 @@ export class PopupRenderer {
             return fragment
         }
 
-        recentActions.forEach(action => {
-            const actionItem = document.createElement('div')
-            actionItem.className = 'action-item'
+        recentActions.forEach(action => fragment.appendChild(this.buildActionItem(action)))
 
-            const actionType = document.createElement('div')
-            actionType.className = 'action-type'
-            let typeText = `${action.type} in ${action.element}`
-            if (action.labelText)
-                typeText += ` with label: ${TextUtils.truncateText(action.labelText)}`
-            actionType.textContent = typeText
+        return fragment
+    }
 
-            const actionMessage = document.createElement('div')
-            actionMessage.className = 'action-message'
-            actionMessage.textContent = TextUtils.truncateText(action.value || action.labelText || action.element || '')
+    static buildActionPickerList(
+        items: { action: UserAction, index: number }[],
+        noActionsMessage: string
+    ): DocumentFragment {
+        const fragment = document.createDocumentFragment()
 
-            const actionTime = document.createElement('div')
-            actionTime.className = 'action-time'
-            actionTime.textContent = PopupFormat.formatTime(action.timestamp)
+        if (items.length === 0) {
+            const empty = document.createElement('div')
+            empty.className = 'empty-state'
+            empty.textContent = noActionsMessage
+            fragment.appendChild(empty)
+            return fragment
+        }
 
-            actionItem.appendChild(actionType)
-            actionItem.appendChild(actionMessage)
-            actionItem.appendChild(actionTime)
-            fragment.appendChild(actionItem)
+        items.forEach(({action, index}) => {
+            const item = this.buildActionItem(action, true)
+            item.dataset.actionIndex = String(index)
+            fragment.appendChild(item)
         })
 
         return fragment
+    }
+
+    static decorateActionPickerItem(item: HTMLElement, included: boolean, isStart: boolean, startLabel: string): void {
+        item.classList.toggle('included', included)
+        item.classList.toggle('start', isStart)
+        const existing = item.querySelector('.action-start-badge')
+        if (isStart && !existing) {
+            const badge = document.createElement('span')
+            badge.className = 'action-start-badge'
+            badge.textContent = startLabel
+            item.appendChild(badge)
+        } else if (!isStart && existing) {
+            existing.remove()
+        }
+    }
+
+    private static buildActionItem(action: UserAction, compact = false): HTMLDivElement {
+        const actionItem = document.createElement('div')
+        actionItem.className = 'action-item'
+        actionItem.title = this.buildActionTooltip(action)
+
+        const actionType = document.createElement('div')
+        actionType.className = 'action-type'
+        let typeText = `${action.type} in ${action.element}`
+        if (!compact && action.labelText)
+            typeText += ` with label: ${TextUtils.truncateText(action.labelText)}`
+        actionType.textContent = typeText
+        actionItem.appendChild(actionType)
+
+        const descriptor = compact
+            ? action.labelText || action.value
+            : action.value || action.labelText || action.element
+        if (descriptor) {
+            const actionMessage = document.createElement('div')
+            actionMessage.className = 'action-message'
+            actionMessage.textContent = TextUtils.truncateText(descriptor)
+            actionItem.appendChild(actionMessage)
+        }
+
+        const actionTime = document.createElement('div')
+        actionTime.className = 'action-time'
+        actionTime.textContent = PopupFormat.formatTime(action.timestamp)
+        actionItem.appendChild(actionTime)
+
+        return actionItem
+    }
+
+    static actionDetailFields(action: UserAction): string[] {
+        return [action.labelText, action.value, action.selector, action.tabInfo?.url].filter((v): v is string => !!v)
+    }
+
+    private static buildActionTooltip(action: UserAction): string {
+        return [
+            `${action.type} in ${action.element}`,
+            ...this.actionDetailFields(action),
+            PopupFormat.formatTime(action.timestamp, true),
+        ].join('\n')
     }
 
     static buildRecentNetworkRequests(

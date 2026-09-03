@@ -1,6 +1,6 @@
 import * as browser from "webextension-polyfill";
 import {ErrorLog, ExtensionConfiguration, TabInfo, UserAction} from "../lib/types";
-import {PopupContext, PopupDOM} from "./popup-context";
+import {PopupContext, PopupDOM, PopupElementId} from "./popup-context";
 import {PromptConfirmation} from "./popup-prompt-confirmation";
 import {PopupNavigation} from "./popup-navigation";
 import {TabScope} from "./popup-tab-scope";
@@ -17,6 +17,17 @@ export interface ConfigureViewDeps {
     copyToClipboard: (text: string) => Promise<void>,
 }
 
+const MODE_SECTIONS: Record<'steps' | 'document' | 'full', PopupElementId[]> = {
+    steps: ['modeConfigSection', 'dataScopeSection', 'stepsConfigSection', 'expectedErrorsSection', 'unexpectedBehaviorSection', 'reviewSection'],
+    document: ['modeConfigSection', 'dataScopeSection', 'stepsConfigSection', 'reviewSection'],
+    full: ['modeConfigSection', 'fullConfigSection', 'reviewSection'],
+}
+
+const ALL_CONFIG_SECTIONS: PopupElementId[] = [
+    'modeConfigSection', 'dataScopeSection', 'stepsConfigSection', 'fullConfigSection',
+    'expectedErrorsSection', 'unexpectedBehaviorSection', 'reviewSection',
+]
+
 export class ConfigureView {
     static async initializeConfigureView(ctx: PopupContext, deps: ConfigureViewDeps): Promise<void> {
         try {
@@ -25,8 +36,7 @@ export class ConfigureView {
             await ConfigureView.setConfigureCurrentTabId(ctx)
             ctx.trackedTabs = await TabScope.buildTrackedTabsListFromStorage(ctx.storageData)
             TabScope.ensureDefaultTabSelection(ctx.configureConfig, ctx.trackedTabs, ctx.configureCurrentTabId)
-
-            ConfigureView.updateConfigureStorageStatus(ctx)
+            ConfigureView.recomputeIncludeAllTabs(ctx)
 
             ConfigureView.setupConfigureEventListeners(ctx, deps)
             if (userErrorTextarea)
@@ -34,15 +44,7 @@ export class ConfigureView {
 
             ConfigureView.initializeConfigureDefaults(ctx)
 
-            ConfigureView.renderTabScopeList(ctx)
-            ConfigureView.setTabScopeVisibility(ctx)
-
-            ConfigureView.updateConfigureUI(ctx)
-            ConfigureView.updateConfigurePreview(ctx)
-            ConfigureView.renderExpectedErrors(ctx)
-            ConfigureView.updateActionsCountLimits(ctx)
-
-            ConfigureView.updateGenerateButtonState(ctx)
+            ConfigureView.selectConfigureMode(ctx, ctx.configureConfig.mode)
 
             ctx.configurePopupInitialized = true
         } catch (error) {
@@ -53,37 +55,33 @@ export class ConfigureView {
     static async refreshConfigureViewState(ctx: PopupContext, loadData: () => Promise<void>): Promise<void> {
         await loadData()
         await ConfigureView.setConfigureCurrentTabId(ctx)
+        const wasAllTabs = ctx.configureConfig.includeAllTabs
         ctx.trackedTabs = await TabScope.buildTrackedTabsListFromStorage(ctx.storageData)
-        TabScope.reconcileSelectedTabScope(ctx.configureConfig, ctx.trackedTabs, ctx.configureCurrentTabId)
-        ConfigureView.updateConfigureStorageStatus(ctx)
-        ConfigureView.renderTabScopeList(ctx)
-        ConfigureView.setTabScopeVisibility(ctx)
-        ConfigureView.updateActionsCountLimits(ctx)
-        ConfigureView.updateConfigurePreview(ctx)
-        ConfigureView.renderExpectedErrors(ctx)
-        ConfigureView.updateGenerateButtonState(ctx)
+        if (wasAllTabs)
+            ctx.configureConfig.selectedTabIds = ctx.trackedTabs.map(tab => tab.id ?? 'unknown')
+        else
+            TabScope.reconcileSelectedTabScope(ctx.configureConfig, ctx.trackedTabs, ctx.configureCurrentTabId)
+        ConfigureView.recomputeIncludeAllTabs(ctx)
+        ConfigureView.renderConfigureView(ctx)
     }
 
     private static selectConfigureMode(ctx: PopupContext, mode: 'steps' | 'full' | 'document'): void {
-        if (ctx.configureConfig.mode !== mode) {
+        const modeChanged = ctx.configureConfig.mode !== mode
+        if (modeChanged) {
             if (mode === 'full') {
                 ctx.previousTabScope = {
-                    includeAllTabs: ctx.configureConfig.includeAllTabs,
                     selectedTabIds: [...ctx.configureConfig.selectedTabIds],
                 }
                 ctx.configureConfig.includeAllTabs = true
             } else if ((mode === 'steps' || mode === 'document') && ctx.previousTabScope) {
-                ctx.configureConfig.includeAllTabs = ctx.previousTabScope.includeAllTabs
                 ctx.configureConfig.selectedTabIds = [...ctx.previousTabScope.selectedTabIds]
+                ConfigureView.recomputeIncludeAllTabs(ctx)
             }
         }
 
         ctx.configureConfig.mode = mode
 
         const selectedOption = document.querySelector(`[data-mode="${mode}"]`) as HTMLElement
-        const stepsConfigSection = PopupDOM.getHtmlElement('stepsConfigSection')
-        const fullConfigSection = PopupDOM.getHtmlElement('fullConfigSection')
-        const actionsCountInput = PopupDOM.getHtmlElement('actionsCount') as HTMLInputElement
         const timeWindowInput = PopupDOM.getHtmlElement('timeWindowMinutes') as HTMLInputElement
         const includeAllTabsCheckbox = PopupDOM.getHtmlElement('includeAllTabs') as HTMLInputElement
 
@@ -97,93 +95,52 @@ export class ConfigureView {
         if (selectedOption)
             selectedOption.classList.add('selected')
 
-        if (stepsConfigSection)
-            stepsConfigSection.style.display = mode === 'steps' || mode === 'document' ? 'block' : 'none'
-        if (fullConfigSection)
-            fullConfigSection.style.display = mode === 'full' ? 'block' : 'none'
-
-        if (ctx.storageData) {
+        if (modeChanged && ctx.storageData) {
             const totalActions = DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig).length
             if (mode === 'steps' || mode === 'document')
-                ctx.configureConfig.actionsCount = Math.min(50, totalActions)
+                ctx.configureConfig.actionsCount = ConfigureView.defaultActionsCount(totalActions)
             else
                 ctx.configureConfig.timeWindowMinutes = ctx.configureConfig.timeWindowMinutes || 90
-
-            if (actionsCountInput) {
-                actionsCountInput.value = ctx.configureConfig.actionsCount.toString()
-                ConfigureView.updateSelectedCount(ctx)
-            }
-            if (timeWindowInput)
-                timeWindowInput.value = ctx.configureConfig.timeWindowMinutes.toString()
         }
+
+        if (timeWindowInput)
+            timeWindowInput.value = ctx.configureConfig.timeWindowMinutes.toString()
 
         if (includeAllTabsCheckbox) {
             includeAllTabsCheckbox.checked = ctx.configureConfig.includeAllTabs
             includeAllTabsCheckbox.disabled = mode === 'full'
         }
 
-        ConfigureView.updateConfigurePreview(ctx)
-        ConfigureView.renderExpectedErrors(ctx)
-        ConfigureView.updateGenerateButtonState(ctx)
-        ConfigureView.updateActionsCountLimits(ctx)
-        ConfigureView.setTabScopeVisibility(ctx)
-        ConfigureView.updateModeSpecificVisibility(ctx)
-    }
-
-    private static updateConfigureUI(ctx: PopupContext): void {
-        ConfigureView.selectConfigureMode(ctx, ctx.configureConfig.mode)
-
-        const includeAllTabsCheckbox = PopupDOM.getHtmlElement('includeAllTabs') as HTMLInputElement
-        if (includeAllTabsCheckbox)
-            includeAllTabsCheckbox.checked = ctx.configureConfig.includeAllTabs
-        ConfigureView.updateModeSpecificVisibility(ctx)
+        ConfigureView.renderConfigureView(ctx)
     }
 
     private static initializeConfigureDefaults(ctx: PopupContext): void {
         if (!ctx.storageData)
             return
         const totalActions = DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig).length
-        const actionsCountInput = PopupDOM.getHtmlElement('actionsCount') as HTMLInputElement
         const timeWindowInput = PopupDOM.getHtmlElement('timeWindowMinutes') as HTMLInputElement
 
         if (ctx.configureConfig.mode === 'steps' || ctx.configureConfig.mode === 'document')
-            ctx.configureConfig.actionsCount = Math.min(50, totalActions)
+            ctx.configureConfig.actionsCount = ConfigureView.defaultActionsCount(totalActions)
         else
             ctx.configureConfig.timeWindowMinutes = ctx.configureConfig.timeWindowMinutes || 90
 
-        if (actionsCountInput) {
-            actionsCountInput.value = ctx.configureConfig.actionsCount.toString()
-            actionsCountInput.max = totalActions.toString()
-        }
         if (timeWindowInput)
             timeWindowInput.value = ctx.configureConfig.timeWindowMinutes.toString()
 
-        ConfigureView.updateSelectedCount(ctx)
+        ConfigureView.updateActionsBadge(ctx)
     }
 
-    private static updateConfigureStorageStatus(ctx: PopupContext): void {
-        const statusElement = PopupDOM.getHtmlElement('storageStatus')
-        if (!statusElement || !ctx.storageData)
-            return
+    private static defaultActionsCount(available: number): number {
+        return Math.min(50, available)
+    }
 
-        const uniqueTabs = new Set(ctx.storageData.userActions.map(action => action.tabInfo.id))
-        const tabsCount = uniqueTabs.size
-        const actionsCount = ctx.storageData.userActions.length
-        const errorsCount = ctx.storageData.errors.length
-        const availableActionsBadge = PopupDOM.getHtmlElement('availableActionsBadge')
+    private static updateTabsCountBadge(ctx: PopupContext): void {
         const tabsCountBadge = PopupDOM.getHtmlElement('tabsCountBadge')
-
-        statusElement.textContent =
-            `${browser.i18n.getMessage('popup_default_storage')} | ` +
-            `${browser.i18n.getMessage('popup_tabs_count', tabsCount.toString())} | ` +
-            `${browser.i18n.getMessage('popup_actions_count', actionsCount.toString())} | ` +
-            `${browser.i18n.getMessage('popup_errors_count', errorsCount.toString())}`
-
-        if (availableActionsBadge)
-            availableActionsBadge.textContent = browser.i18n.getMessage('popup_available_actions', actionsCount.toString())
-
-        if (tabsCountBadge)
-            tabsCountBadge.textContent = browser.i18n.getMessage('popup_tabs_count', tabsCount.toString())
+        if (!tabsCountBadge || !ctx.storageData)
+            return
+        const tabsCount = new Set(ctx.storageData.userActions.map(action => action.tabInfo.id)).size
+        tabsCountBadge.textContent = browser.i18n.getMessage('popup_tabs_count', tabsCount.toString())
     }
 
     private static async setConfigureCurrentTabId(ctx: PopupContext): Promise<void> {
@@ -196,116 +153,199 @@ export class ConfigureView {
         }
     }
 
-    private static updateSelectedCount(ctx: PopupContext): void {
-        const selectedCountElement = PopupDOM.getHtmlElement('selectedCount')
-        if (selectedCountElement && ctx.storageData) {
-            if (ctx.configureConfig.mode === 'full') {
-                selectedCountElement.textContent =
-                    browser.i18n.getMessage('popup_time_window_selected', ctx.configureConfig.timeWindowMinutes.toString()) ||
-                    `${ctx.configureConfig.timeWindowMinutes} minutes`
-            } else {
-                const totalActions = DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig).length
-                selectedCountElement.textContent =
-                    browser.i18n.getMessage('popup_actions_count', ctx.configureConfig.actionsCount.toString()) +
-                    (ctx.configureConfig.actionsCount > totalActions ? browser.i18n.getMessage('popup_limited') : '')
-            }
-        }
+    private static updateActionsBadge(ctx: PopupContext, availableActions?: number): void {
+        const badge = PopupDOM.getHtmlElement('availableActionsBadge')
+        if (!badge || !ctx.storageData)
+            return
+        const available = availableActions ?? DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig).length
+        const selected = Math.min(ctx.configureConfig.actionsCount, available)
+        badge.textContent = browser.i18n.getMessage('popup_actions_selected_count', [selected.toString(), available.toString()])
+        const selectAllCheckbox = PopupDOM.getHtmlElement('selectAllActions') as HTMLInputElement
+        if (selectAllCheckbox)
+            selectAllCheckbox.checked = available > 0 && ctx.configureConfig.actionsCount >= available
     }
 
-    private static updateConfigurePreview(ctx: PopupContext): void {
+    private static updateConfigurePreview(ctx: PopupContext, filteredData?: FilteredDataForConfigure): void {
         const previewElement = PopupDOM.getHtmlElement('configPreview')
         if (!previewElement || !ctx.storageData)
             return
 
-        const filteredData = DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig)
+        const data = filteredData ?? DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig)
         previewElement.textContent = ConfigureView.buildConfigurePreviewText(
             ctx.configureConfig,
-            filteredData,
+            data,
             ctx.configuration,
             ctx.userDefinedError
         )
     }
 
-    private static renderExpectedErrors(ctx: PopupContext): void {
+    private static renderExpectedErrors(ctx: PopupContext, filteredData?: FilteredDataForConfigure): void {
         const container = PopupDOM.getHtmlElement('filteredErrorsContainer')
+        if (!container || ctx.configureConfig.mode !== 'steps')
+            return
+
         const allErrorsCheckbox = PopupDOM.getHtmlElement('allErrorsExpected') as HTMLInputElement
-        const expectedSection = PopupDOM.getHtmlElement('expectedErrorsSection')
-
-        if (!container)
-            return
-
-        if (ctx.configureConfig.mode === 'full' || ctx.configureConfig.mode === 'document') {
-            container.style.display = 'none'
-            if (expectedSection)
-                expectedSection.style.display = 'none'
-            return
-        }
-        container.style.display = 'block'
-        if (expectedSection)
-            expectedSection.style.display = 'block'
-
-        const filteredData = DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig)
-        const errorsForView = ctx.configureConfig.mode === 'steps'
-            ? filteredData.limitedErrors
-            : filteredData.errors
-
         if (allErrorsCheckbox)
             allErrorsCheckbox.checked = ctx.allErrorsExpected
 
+        const data = filteredData ?? DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig)
         container.replaceChildren(PopupRenderer.buildExpectedErrorsList(
-            errorsForView,
+            data.limitedErrors,
             ctx.expectedErrors,
             ctx.allErrorsExpected
         ))
     }
 
-    private static updateGenerateButtonState(ctx: PopupContext): void {
+    private static updateGenerateButtonState(ctx: PopupContext, filteredData?: FilteredDataForConfigure): void {
         const generateBtn = PopupDOM.getHtmlElement('generateBtn') as HTMLButtonElement
-        const configureActions = PopupDOM.getHtmlElement('configureViewActions')
         if (!generateBtn)
             return
         if (!ctx.storageData) {
-            generateBtn.style.display = 'none'
             generateBtn.disabled = true
-            configureActions?.classList.add('actions-single')
             return
         }
-        const filtered = DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig)
+        const filtered = filteredData ?? DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig)
         const effectiveCount =
             ctx.configureConfig.mode === 'full' ? filtered.actions.length : filtered.limitedActions.length
-        const canGenerate = effectiveCount > 0
-        generateBtn.style.display = canGenerate ? '' : 'none'
-        generateBtn.disabled = false
-        configureActions?.classList.toggle('actions-single', !canGenerate)
+        generateBtn.disabled = effectiveCount === 0
     }
 
-    private static updateActionsCountLimits(ctx: PopupContext): void {
-        if (ctx.configureConfig.mode === 'full') {
-            ConfigureView.updateAvailableActionsBadge(ctx)
-            return
+    private static renderConfigureView(ctx: PopupContext): void {
+        const visible = new Set(MODE_SECTIONS[ctx.configureConfig.mode])
+
+        ALL_CONFIG_SECTIONS.forEach((id) => {
+            const el = PopupDOM.getHtmlElement(id)
+            if (el)
+                el.style.display = visible.has(id) ? 'block' : 'none'
+        })
+
+        const scopedActions = ctx.storageData ? DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig) : []
+        if (ctx.configureConfig.mode !== 'full' && ctx.storageData)
+            ConfigureView.clampActionsCount(ctx, scopedActions.length)
+        const filteredData = ctx.storageData ? DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig, scopedActions) : undefined
+
+        if (visible.has('dataScopeSection')) {
+            ConfigureView.renderTabScopeList(ctx)
+            ConfigureView.updateTabsCountBadge(ctx)
+            const includeAllTabsCheckbox = PopupDOM.getHtmlElement('includeAllTabs') as HTMLInputElement
+            if (includeAllTabsCheckbox) {
+                includeAllTabsCheckbox.checked = ctx.configureConfig.includeAllTabs
+                const group = includeAllTabsCheckbox.closest('.checkbox-group') as HTMLElement | null
+                if (group)
+                    group.style.display = ctx.trackedTabs.length > 1 ? '' : 'none'
+            }
         }
-        const actionsCountInput = PopupDOM.getHtmlElement('actionsCount') as HTMLInputElement
-        if (!actionsCountInput || !ctx.storageData)
-            return
-        const availableActions = DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig).length
-        actionsCountInput.max = availableActions.toString()
-        if (ctx.configureConfig.actionsCount > availableActions) {
-            ctx.configureConfig.actionsCount = availableActions
-            actionsCountInput.value = availableActions.toString()
+        if (visible.has('stepsConfigSection')) {
+            const filterInput = PopupDOM.getHtmlElement('actionFilter') as HTMLInputElement
+            if (filterInput)
+                filterInput.value = ctx.actionFilter
+            ConfigureView.renderActionPicker(ctx, scopedActions)
+            ConfigureView.updateActionsBadge(ctx, scopedActions.length)
         }
-        ConfigureView.updateSelectedCount(ctx)
-        ConfigureView.updateAvailableActionsBadge(ctx)
+        if (visible.has('expectedErrorsSection'))
+            ConfigureView.renderExpectedErrors(ctx, filteredData)
+
+        ConfigureView.updateConfigurePreview(ctx, filteredData)
+        ConfigureView.updateGenerateButtonState(ctx, filteredData)
     }
 
-    private static updateAvailableActionsBadge(ctx: PopupContext): void {
-        const badge = PopupDOM.getHtmlElement('availableActionsBadge')
-        if (!badge)
+    private static clampActionsCount(ctx: PopupContext, available: number): void {
+        if (available <= 0)
             return
-        const count = ctx.configureConfig.mode === 'full'
-            ? DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig).actions.length
-            : DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig).length
-        const localized = browser.i18n.getMessage('popup_available_actions', count.toString())
-        badge.textContent = localized || `${count} available`
+        if (ctx.configureConfig.actionsCount > available)
+            ctx.configureConfig.actionsCount = available
+        else if (ctx.configureConfig.actionsCount <= 0)
+            ctx.configureConfig.actionsCount = ConfigureView.defaultActionsCount(available)
+    }
+
+    private static renderActionPicker(ctx: PopupContext, actions: UserAction[]): void {
+        const list = PopupDOM.getHtmlElement('actionPickerList')
+        if (!list)
+            return
+        const items = actions.map((action, index) => ({action, index}))
+        list.replaceChildren(PopupRenderer.buildActionPickerList(items, browser.i18n.getMessage('popup_no_actions_detected')))
+        ConfigureView.focusMatch(ConfigureView.applyActionHighlights(ctx, actions), 0, false)
+    }
+
+    private static applyActionHighlights(ctx: PopupContext, actions: UserAction[]): HTMLElement[] {
+        const list = PopupDOM.getHtmlElement('actionPickerList')
+        const matches: HTMLElement[] = []
+        if (!list)
+            return matches
+        const includedCount = ctx.configureConfig.actionsCount
+        const startIndex = Math.min(includedCount, actions.length) - 1
+        const startLabel = browser.i18n.getMessage('popup_start_here')
+        const search = ctx.actionFilter.trim().toLowerCase()
+        list.querySelectorAll('.action-item').forEach((el) => {
+            const item = el as HTMLElement
+            const idx = parseInt(item.dataset.actionIndex ?? '-1')
+            PopupRenderer.decorateActionPickerItem(item, idx > -1 && idx < includedCount, idx === startIndex, startLabel)
+            const action = actions[idx]
+            const isMatch = !!search && !!action && ConfigureView.actionMatchesSearch(action, search)
+            item.classList.toggle('match', isMatch)
+            if (isMatch)
+                matches.push(item)
+        })
+        return matches
+    }
+
+    private static focusMatch(matches: HTMLElement[], index: number, scroll = true): void {
+        const list = PopupDOM.getHtmlElement('actionPickerList')
+        if (!list)
+            return
+        const countEl = PopupDOM.getHtmlElement('actionMatchCount')
+        const prevBtn = PopupDOM.getHtmlElement('actionMatchPrev') as HTMLButtonElement
+        const nextBtn = PopupDOM.getHtmlElement('actionMatchNext') as HTMLButtonElement
+
+        list.querySelectorAll('.action-item.match-current').forEach(el => el.classList.remove('match-current'))
+        if (prevBtn) prevBtn.disabled = matches.length === 0
+        if (nextBtn) nextBtn.disabled = matches.length === 0
+
+        if (matches.length === 0) {
+            if (countEl) countEl.textContent = '0/0'
+            return
+        }
+        const clamped = ((index % matches.length) + matches.length) % matches.length
+        const current = matches[clamped]
+        current.classList.add('match-current')
+        if (countEl) countEl.textContent = `${clamped + 1}/${matches.length}`
+        if (scroll)
+            current.scrollIntoView({block: 'center'})
+    }
+
+    private static stepMatch(delta: number): void {
+        const list = PopupDOM.getHtmlElement('actionPickerList')
+        if (!list)
+            return
+        const matches = Array.from(list.querySelectorAll('.action-item.match')) as HTMLElement[]
+        if (matches.length === 0)
+            return
+        const currentIdx = matches.findIndex(el => el.classList.contains('match-current'))
+        ConfigureView.focusMatch(matches, (currentIdx === -1 ? 0 : currentIdx) + delta)
+    }
+
+    private static actionMatchesSearch(action: UserAction, search: string): boolean {
+        return [action.type, action.element, ...PopupRenderer.actionDetailFields(action)]
+            .join(' ')
+            .toLowerCase()
+            .includes(search)
+    }
+
+    private static applyActionsCount(ctx: PopupContext, count: number): void {
+        ctx.configureConfig.actionsCount = count
+        if (!ctx.storageData)
+            return
+        const list = PopupDOM.getHtmlElement('actionPickerList')
+        const currentMatchIndex = list
+            ? Array.from(list.querySelectorAll('.action-item.match')).findIndex(el => el.classList.contains('match-current'))
+            : -1
+        const filteredData = DataFilter.getFilteredDataForConfig(ctx.storageData, ctx.configureConfig)
+        const matches = ConfigureView.applyActionHighlights(ctx, filteredData.actions)
+        ConfigureView.focusMatch(matches, currentMatchIndex === -1 ? 0 : currentMatchIndex, false)
+        ConfigureView.updateActionsBadge(ctx, filteredData.actions.length)
+        ConfigureView.renderExpectedErrors(ctx, filteredData)
+        ConfigureView.updateConfigurePreview(ctx, filteredData)
+        ConfigureView.updateGenerateButtonState(ctx, filteredData)
     }
 
     private static renderTabScopeList(ctx: PopupContext): void {
@@ -326,18 +366,10 @@ export class ConfigureView {
         ))
     }
 
-    private static setTabScopeVisibility(ctx: PopupContext): void {
-        const container = PopupDOM.getHtmlElement('tabScopeContainer')
-        const inputs = document.querySelectorAll('.tab-scope-checkbox')
-        if (!container)
-            return
-        if (ctx.configureConfig.mode === 'full' || ctx.configureConfig.includeAllTabs) {
-            container.style.display = 'none'
-            inputs.forEach(el => (el as HTMLInputElement).disabled = true)
-        } else {
-            container.style.display = 'block'
-            inputs.forEach(el => (el as HTMLInputElement).disabled = false)
-        }
+    private static recomputeIncludeAllTabs(ctx: PopupContext): void {
+        ctx.configureConfig.includeAllTabs = ctx.configureConfig.mode === 'full'
+            || (ctx.trackedTabs.length > 1
+                && TabScope.allTabsSelected(ctx.configureConfig.selectedTabIds, ctx.trackedTabs))
     }
 
     private static generateConfigurePrompt(ctx: PopupContext): void {
@@ -442,9 +474,9 @@ export class ConfigureView {
         previewText = `📋 ${browser.i18n.getMessage(modeTitleKey)}\n\n`
 
         if (configureConfig.mode === 'steps') {
-            previewText += browser.i18n.getMessage('popup_configuration_preview_actions', configureConfig.actionsCount.toString())
+            previewText += browser.i18n.getMessage('popup_configuration_preview_actions', filteredData.limitedActions.length.toString())
         } else if (configureConfig.mode === 'document') {
-            previewText += browser.i18n.getMessage('popup_configuration_preview_document', configureConfig.actionsCount.toString())
+            previewText += browser.i18n.getMessage('popup_configuration_preview_document', filteredData.limitedActions.length.toString())
         } else {
             previewText += browser.i18n.getMessage('popup_configuration_preview_full_report')
             previewText += `\n⏱️ ${browser.i18n.getMessage('popup_configuration_preview_time_window', configureConfig.timeWindowMinutes.toString())}`
@@ -481,7 +513,6 @@ export class ConfigureView {
             })
         })
 
-        const actionsCountInput = PopupDOM.getHtmlElement('actionsCount') as HTMLInputElement
         const timeWindowInput = PopupDOM.getHtmlElement('timeWindowMinutes') as HTMLInputElement
         const includeAllTabsCheckbox = PopupDOM.getHtmlElement('includeAllTabs') as HTMLInputElement
         const tabScopeList = PopupDOM.getHtmlElement('tabScopeList')
@@ -497,32 +528,57 @@ export class ConfigureView {
         const copyResponseSummaryBtn = PopupDOM.getHtmlElement('copyResponseSummary')
         const copyResponseDescriptionBtn = PopupDOM.getHtmlElement('copyResponseDescription')
 
-        if (actionsCountInput)
-            actionsCountInput.addEventListener('input', () => {
-                ctx.configureConfig.actionsCount = parseInt(actionsCountInput.value) || 0
-                ConfigureView.updateSelectedCount(ctx)
-                ConfigureView.updateConfigurePreview(ctx)
-                ConfigureView.renderExpectedErrors(ctx)
-                ConfigureView.updateGenerateButtonState(ctx)
-            })
+        const actionPickerList = PopupDOM.getHtmlElement('actionPickerList')
+        actionPickerList?.addEventListener('click', (event) => {
+            const item = (event.target as HTMLElement).closest('.action-item') as HTMLElement | null
+            if (!item || item.dataset.actionIndex === undefined)
+                return
+            ConfigureView.applyActionsCount(ctx, parseInt(item.dataset.actionIndex) + 1)
+        })
+
+        const actionFilterInput = PopupDOM.getHtmlElement('actionFilter') as HTMLInputElement
+        actionFilterInput?.addEventListener('input', () => {
+            ctx.actionFilter = actionFilterInput.value
+            if (!ctx.storageData)
+                return
+            const actions = DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig)
+            ConfigureView.focusMatch(ConfigureView.applyActionHighlights(ctx, actions), 0)
+        })
+        actionFilterInput?.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key !== 'Enter')
+                return
+            event.preventDefault()
+            ConfigureView.stepMatch(event.shiftKey ? -1 : 1)
+        })
+
+        PopupDOM.getHtmlElement('actionMatchPrev')?.addEventListener('click', () => ConfigureView.stepMatch(-1))
+        PopupDOM.getHtmlElement('actionMatchNext')?.addEventListener('click', () => ConfigureView.stepMatch(1))
+
+        const selectAllActionsCheckbox = PopupDOM.getHtmlElement('selectAllActions') as HTMLInputElement
+        selectAllActionsCheckbox?.addEventListener('change', () => {
+            if (!ctx.storageData)
+                return
+            const available = DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig).length
+            ConfigureView.applyActionsCount(ctx, selectAllActionsCheckbox.checked ? available : 1)
+        })
 
         if (timeWindowInput)
             timeWindowInput.addEventListener('input', () => {
                 ctx.configureConfig.timeWindowMinutes = parseInt(timeWindowInput.value) || ctx.configureConfig.timeWindowMinutes
-                ConfigureView.updateSelectedCount(ctx)
                 ConfigureView.updateConfigurePreview(ctx)
                 ConfigureView.updateGenerateButtonState(ctx)
             })
 
         if (includeAllTabsCheckbox)
             includeAllTabsCheckbox.addEventListener('change', () => {
-                ctx.configureConfig.includeAllTabs = includeAllTabsCheckbox.checked
-                ConfigureView.setTabScopeVisibility(ctx)
-                ConfigureView.updateActionsCountLimits(ctx)
-                ConfigureView.updateConfigurePreview(ctx)
-                ConfigureView.updateGenerateButtonState(ctx)
-                ConfigureView.renderExpectedErrors(ctx)
-                ConfigureView.updateSelectedCount(ctx)
+                if (includeAllTabsCheckbox.checked) {
+                    ctx.configureConfig.selectedTabIds = ctx.trackedTabs.map(tab => tab.id ?? 'unknown')
+                } else {
+                    ctx.configureConfig.selectedTabIds = []
+                    TabScope.ensureDefaultTabSelection(ctx.configureConfig, ctx.trackedTabs, ctx.configureCurrentTabId)
+                }
+                ConfigureView.recomputeIncludeAllTabs(ctx)
+                ConfigureView.renderConfigureView(ctx)
             })
 
         tabScopeList?.addEventListener('change', (event) => {
@@ -532,16 +588,13 @@ export class ConfigureView {
                 if (!tabId)
                     return
                 const parsedId = TabScope.parseTabId(tabId)
-                if (target.checked && !ctx.configureConfig.selectedTabIds.find(id => id === parsedId)) {
+                if (target.checked && !ctx.configureConfig.selectedTabIds.some(id => TabScope.tabIdsEqual(id, parsedId))) {
                     ctx.configureConfig.selectedTabIds.push(parsedId)
                 } else {
-                    ctx.configureConfig.selectedTabIds = ctx.configureConfig.selectedTabIds.filter(id => id !== parsedId)
+                    ctx.configureConfig.selectedTabIds = ctx.configureConfig.selectedTabIds.filter(id => !TabScope.tabIdsEqual(id, parsedId))
                 }
-                ConfigureView.updateActionsCountLimits(ctx)
-                ConfigureView.updateConfigurePreview(ctx)
-                ConfigureView.renderExpectedErrors(ctx)
-                ConfigureView.updateGenerateButtonState(ctx)
-                ConfigureView.updateSelectedCount(ctx)
+                ConfigureView.recomputeIncludeAllTabs(ctx)
+                ConfigureView.renderConfigureView(ctx)
             }
         })
 
@@ -549,6 +602,7 @@ export class ConfigureView {
             allErrorsExpectedCheckbox.addEventListener('change', () => {
                 ctx.allErrorsExpected = allErrorsExpectedCheckbox.checked
                 ConfigureView.renderExpectedErrors(ctx)
+                ConfigureView.updateConfigurePreview(ctx)
             })
 
         filteredErrorsContainer?.addEventListener('change', (event) => {
@@ -559,6 +613,7 @@ export class ConfigureView {
                 } else {
                     ctx.expectedErrors.delete(target.value)
                 }
+                ConfigureView.updateConfigurePreview(ctx)
             }
         })
 
@@ -627,38 +682,6 @@ export class ConfigureView {
             })
     }
 
-    private static updateModeSpecificVisibility(ctx: PopupContext): void {
-        const expectedErrorsSection = PopupDOM.getHtmlElement('expectedErrorsSection')
-        const unexpectedSection = PopupDOM.getHtmlElement('unexpectedBehaviorSection')
-        const includeAllTabsCheckbox = PopupDOM.getHtmlElement('includeAllTabs') as HTMLInputElement
-        const tabScopeContainer = PopupDOM.getHtmlElement('tabScopeContainer')
-        const fullConfigSection = PopupDOM.getHtmlElement('fullConfigSection')
-        const stepsConfigSection = PopupDOM.getHtmlElement('stepsConfigSection')
-        const dataScopeSection = PopupDOM.getHtmlElement('dataScopeSection')
-
-        if (expectedErrorsSection)
-            expectedErrorsSection.style.display = ctx.configureConfig.mode === 'steps' ? 'block' : 'none'
-        if (unexpectedSection)
-            unexpectedSection.style.display = ctx.configureConfig.mode === 'steps' ? 'block' : 'none'
-        if (includeAllTabsCheckbox) {
-            includeAllTabsCheckbox.disabled = ctx.configureConfig.mode === 'full'
-            includeAllTabsCheckbox.checked = ctx.configureConfig.mode === 'full' ? true : ctx.configureConfig.includeAllTabs
-        }
-        if (tabScopeContainer)
-            tabScopeContainer.style.display = ctx.configureConfig.mode === 'full' ? 'none' : 'block'
-        if (dataScopeSection)
-            dataScopeSection.style.display = ctx.configureConfig.mode === 'full' ? 'none' : 'block'
-        if (fullConfigSection)
-            fullConfigSection.style.display = ctx.configureConfig.mode === 'full' ? 'block' : 'none'
-        if (stepsConfigSection)
-            stepsConfigSection.style.display =
-                ctx.configureConfig.mode === 'steps' || ctx.configureConfig.mode === 'document' ? 'block' : 'none'
-    }
-
-    private static getUserDefinedError(ctx: PopupContext): string {
-        return ctx.userDefinedError.trim()
-    }
-
     private static getTabInfoForUserDefinedError(ctx: PopupContext): TabInfo {
         const scopedAction = DataFilter.getActionsByScope(ctx.storageData, ctx.configureConfig)[0]
 
@@ -670,6 +693,6 @@ export class ConfigureView {
     }
 
     private static buildUserDefinedError(ctx: PopupContext): ErrorLog | null {
-        return PromptBuilder.buildUserDefinedErrorLog(ConfigureView.getUserDefinedError(ctx), ConfigureView.getTabInfoForUserDefinedError(ctx))
+        return PromptBuilder.buildUserDefinedErrorLog(ctx.userDefinedError.trim(), ConfigureView.getTabInfoForUserDefinedError(ctx))
     }
 }

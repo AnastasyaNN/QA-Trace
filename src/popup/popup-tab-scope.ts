@@ -64,11 +64,20 @@ export class TabScope {
         trackedTabs: TrackedTab[],
         configureCurrentTabId: number
     ): void {
-        const trackedTabIds = new Set(trackedTabs.map((tab) => String(tab.id)))
         configureConfig.selectedTabIds = configureConfig.selectedTabIds.filter((id) =>
-            trackedTabIds.has(String(id))
+            trackedTabs.some((tab) => TabScope.tabIdsEqual(id, tab.id))
         )
         TabScope.ensureDefaultTabSelection(configureConfig, trackedTabs, configureCurrentTabId)
+    }
+
+    static tabIdsEqual(a: TabInfo['id'], b: TabInfo['id']): boolean {
+        return String(a) === String(b)
+    }
+
+    static allTabsSelected(selectedTabIds: Array<number | string>, trackedTabs: TrackedTab[]): boolean {
+        return trackedTabs.length > 0 && trackedTabs.every((tab) =>
+            selectedTabIds.some((id) => TabScope.tabIdsEqual(id, tab.id))
+        )
     }
 
     static parseTabId(id: string): number | string {

@@ -10,7 +10,8 @@ export interface PopupContext {
     configurePopupInitialized: boolean,
     configureCurrentTabId: number,
     configureConfig: ConfigurePopupConfig,
-    previousTabScope: { includeAllTabs: boolean, selectedTabIds: Array<number | string> } | null,
+    actionFilter: string,
+    previousTabScope: { selectedTabIds: Array<number | string> } | null,
     trackedTabs: TrackedTab[],
     expectedErrors: Set<string>,
     allErrorsExpected: boolean,
@@ -29,13 +30,14 @@ export type PopupElementId = 'clearData' | 'configure' | 'getPrompt' | 'errorsLi
     | 'configurationError' | 'responseFields'
     | 'passphraseModal' | 'passphraseModalInput' | 'passphraseModalPurpose' | 'passphraseModalOk' | 'passphraseModalCancel'
     | 'mainView' | 'configureView' | 'promptConfirmationView'
-    | 'userErrorDescription' | 'actionsList' | 'actionsCount' | 'timeWindowMinutes' | 'storageStatus'
+    | 'userErrorDescription' | 'actionsList' | 'actionPickerList' | 'actionFilter' | 'selectAllActions' | 'timeWindowMinutes'
+    | 'actionMatchPrev' | 'actionMatchNext' | 'actionMatchCount'
     | 'availableActionsBadge' | 'tabsCountBadge' | 'includeAllTabs' | 'tabScopeList' | 'allErrorsExpected'
-    | 'filteredErrorsContainer' | 'backToMain' | 'generateBtn' | 'configureViewActions' | 'backToConfigure' | 'copyPrompt'
+    | 'filteredErrorsContainer' | 'backToMain' | 'generateBtn' | 'backToConfigure' | 'copyPrompt'
     | 'copyResponseSummary' | 'copyResponseDescription' | 'responseSummary' | 'responseDescription'
-    | 'stepsConfigSection' | 'fullConfigSection'
-    | 'expectedErrorsSection' | 'unexpectedBehaviorSection' | 'tabScopeContainer' | 'tabScopeEmpty' | 'dataScopeSection'
-    | 'selectedCount' | 'configPreview' | 'promptTextarea'
+    | 'stepsConfigSection' | 'fullConfigSection' | 'modeConfigSection' | 'reviewSection'
+    | 'expectedErrorsSection' | 'unexpectedBehaviorSection' | 'tabScopeEmpty' | 'dataScopeSection'
+    | 'configPreview' | 'promptTextarea'
     | 'latestResponseSection' | 'latestResponseSummary' | 'latestResponseDescription'
     | 'copyLatestSummary' | 'copyLatestDescription'
     | 'recentNetworkRequestsSection' | 'networkRequestsList' | 'downloadNetworkRequests'
@@ -56,6 +58,7 @@ export class PopupDOM {
                 includeAllTabs: false,
                 selectedTabIds: []
             },
+            actionFilter: '',
             previousTabScope: null,
             trackedTabs: [],
             expectedErrors: new Set(),
