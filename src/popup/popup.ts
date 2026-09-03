@@ -4,7 +4,7 @@ import {ExtensionConfigurationManager} from "../lib/integrations";
 import {ScreenshotUtils} from "../lib/screenshots";
 import {ErrorPromptUtils} from "../lib/error-prompt";
 import {ClipboardUtils} from "../lib/clipboard";
-import {ICON_COPY} from "../lib/icons";
+import {ICON_COPY, ICON_SETTINGS, ICON_TRASH} from "../lib/icons";
 import {I18nUtils} from "../lib/i18n";
 import {PopupDOM, PopupContext, PopupElementId} from "./popup-context";
 import {PassphraseModal} from "./popup-passphrase-modal";
@@ -24,7 +24,7 @@ class PopupManager {
     async init(): Promise<void> {
         const extVersion = PopupDOM.getHtmlElement('extVersion')
         I18nUtils.applyI18n()
-        this.renderCopyIcons()
+        this.renderIcons()
         if (extVersion)
             extVersion.textContent = `v${browser.runtime.getManifest().version}`
         await this.loadData()
@@ -33,12 +33,19 @@ class PopupManager {
         this.render()
     }
 
-    private renderCopyIcons(): void {
+    private renderIcons(): void {
         const ids: PopupElementId[] = ['copyLatestSummary', 'copyLatestDescription', 'copyPrompt', 'copyResponseSummary', 'copyResponseDescription']
         ids.forEach((id) => {
             const button = PopupDOM.getHtmlElement(id)
             if (button)
                 button.innerHTML = ICON_COPY
+        })
+
+        const iconById: Partial<Record<PopupElementId, string>> = {configure: ICON_SETTINGS, clearData: ICON_TRASH}
+        Object.entries(iconById).forEach(([id, icon]) => {
+            const button = PopupDOM.getHtmlElement(id as PopupElementId)
+            if (button)
+                button.innerHTML = icon
         })
     }
 
@@ -66,6 +73,7 @@ class PopupManager {
         })
 
         PopupDOM.getHtmlElement('getPrompt')?.addEventListener('click', async () => {
+            this.popupContext.actionFilter = ''
             await this.showConfigureView()
         })
 
@@ -206,16 +214,19 @@ class PopupManager {
     }
 
     private async showConfigureView(): Promise<void> {
-        PopupNavigation.showConfigureViewDOM()
         const deps: ConfigureViewDeps = {
             loadData: () => this.loadData(),
             showConfigureView: () => this.showConfigureView(),
             copyToClipboard: (text) => this.copyToClipboard(text),
         }
-        if (!this.popupContext.configurePopupInitialized) {
-            await ConfigureView.initializeConfigureView(this.popupContext, deps)
-        } else {
-            await ConfigureView.refreshConfigureViewState(this.popupContext, () => this.loadData())
+        try {
+            if (!this.popupContext.configurePopupInitialized) {
+                await ConfigureView.initializeConfigureView(this.popupContext, deps)
+            } else {
+                await ConfigureView.refreshConfigureViewState(this.popupContext, () => this.loadData())
+            }
+        } finally {
+            PopupNavigation.showConfigureViewDOM()
         }
     }
 

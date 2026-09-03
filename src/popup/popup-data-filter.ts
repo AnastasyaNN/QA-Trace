@@ -1,6 +1,7 @@
 import {ErrorLog, StorageData, UserAction} from "../lib/types"
 import {ConfigurePopupConfig, FilteredDataForConfigure} from "./popup-configure-types"
 import {PopupFormat} from "./popup-format"
+import {TabScope} from "./popup-tab-scope"
 
 export class DataFilter {
     static getActionsByScope(
@@ -14,18 +15,19 @@ export class DataFilter {
     if (configureConfig.selectedTabIds.length === 0)
         return []
     return storageData.userActions.filter((action) =>
-        configureConfig.selectedTabIds.some((id) => id === action.tabInfo.id)
+        configureConfig.selectedTabIds.some((id) => TabScope.tabIdsEqual(id, action.tabInfo.id))
     )
 }
 
     static getFilteredDataForConfig(
     storageData: StorageData | null,
-    configureConfig: ConfigurePopupConfig
+    configureConfig: ConfigurePopupConfig,
+    scopedActions?: UserAction[]
 ): FilteredDataForConfigure {
     if (!storageData)
         return {actions: [], errors: [], limitedActions: [], limitedErrors: []}
 
-    const actions = DataFilter.getActionsByScope(storageData, configureConfig)
+    const actions = scopedActions ?? DataFilter.getActionsByScope(storageData, configureConfig)
     const errors = DataFilter.getErrorsByScope(storageData, configureConfig)
 
     if (configureConfig.mode === 'full') {
@@ -98,7 +100,7 @@ export class DataFilter {
     if (configureConfig.selectedTabIds.length === 0)
         return []
     return storageData.errors.filter((error) =>
-        configureConfig.selectedTabIds.some((id) => id === error.tabInfo.id)
+        configureConfig.selectedTabIds.some((id) => TabScope.tabIdsEqual(id, error.tabInfo.id))
     )
     }
 }
