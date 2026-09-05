@@ -1,6 +1,6 @@
 {
-  "extName": { "message": "QA Trace" },
-  "extDescription": { "message": "Track user actions, monitor errors and prepare prompts to generate bug reports and exploratory testing report" },
+  "extName": { "message": "QA Trace – AI Bug Reports, Private & Local" },
+  "extDescription": { "message": "Turn an exploratory testing session into an AI-ready bug report with steps to reproduce. Private & local." },
   "actionTitle": { "message": "QA Trace" },
 
   "popup_user_actions": { "message": "User Actions" },
