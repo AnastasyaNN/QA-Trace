@@ -1,6 +1,6 @@
 {
-  "extName": { "message": "QA Trace" },
-  "extDescription": { "message": "Отслеживание действий и ошибок, подготовка промтов для баг-репортов и отчётов исследовательского тестирования" },
+  "extName": { "message": "QA Trace – AI Bug Reports, Private & Local" },
+  "extDescription": { "message": "AI баг-репорт с шагами воспроизведения из сессии исследовательского тестирования. Приватно и локально." },
   "actionTitle": { "message": "QA Trace" },
 
   "popup_user_actions": { "message": "Действия пользователя" },
