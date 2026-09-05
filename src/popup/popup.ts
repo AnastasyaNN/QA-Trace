@@ -4,7 +4,7 @@ import {ExtensionConfigurationManager} from "../lib/integrations";
 import {ScreenshotUtils} from "../lib/screenshots";
 import {ErrorPromptUtils} from "../lib/error-prompt";
 import {ClipboardUtils} from "../lib/clipboard";
-import {ICON_COPY, ICON_SETTINGS, ICON_TRASH} from "../lib/icons";
+import {IconName, IconUtils} from "../lib/icons";
 import {I18nUtils} from "../lib/i18n";
 import {PopupDOM, PopupContext, PopupElementId} from "./popup-context";
 import {PassphraseModal} from "./popup-passphrase-modal";
@@ -34,18 +34,13 @@ class PopupManager {
     }
 
     private renderIcons(): void {
-        const ids: PopupElementId[] = ['copyLatestSummary', 'copyLatestDescription', 'copyPrompt', 'copyResponseSummary', 'copyResponseDescription']
-        ids.forEach((id) => {
-            const button = PopupDOM.getHtmlElement(id)
-            if (button)
-                button.innerHTML = ICON_COPY
-        })
-
-        const iconById: Partial<Record<PopupElementId, string>> = {configure: ICON_SETTINGS, clearData: ICON_TRASH}
+        const iconById: Partial<Record<PopupElementId, IconName>> = {
+            copyLatestSummary: 'copy', copyLatestDescription: 'copy', copyPrompt: 'copy',
+            copyResponseSummary: 'copy', copyResponseDescription: 'copy',
+            configure: 'settings', clearData: 'trash'
+        }
         Object.entries(iconById).forEach(([id, icon]) => {
-            const button = PopupDOM.getHtmlElement(id as PopupElementId)
-            if (button)
-                button.innerHTML = icon
+            PopupDOM.getHtmlElement(id as PopupElementId)?.replaceChildren(IconUtils.create(icon))
         })
     }
 
