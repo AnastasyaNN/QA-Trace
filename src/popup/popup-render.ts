@@ -2,7 +2,7 @@ import {ErrorLog, UserAction, NetworkRequestLog} from "../lib/types";
 import {TrackedTab} from "./popup-tab-scope";
 import {PopupFormat} from "./popup-format";
 import {TextUtils} from "../lib/text.ts";
-import {ICON_BROWSE, ICON_COPY, ICON_SCREENSHOT} from "../lib/icons";
+import {IconName, IconUtils} from "../lib/icons";
 
 export class PopupRenderer {
     static buildRecentErrors(
@@ -51,11 +51,11 @@ export class PopupRenderer {
             actions.className = 'error-item-actions'
 
             if (error.type === 'ui' && error.screenshotId)
-                actions.appendChild(this.iconButton('btn-copy-screenshot', copyShotLabel, ICON_SCREENSHOT, {errorIndex: String(idx)}))
+                actions.appendChild(this.iconButton('btn-copy-screenshot', copyShotLabel, 'screenshot', {errorIndex: String(idx)}))
             else
-                actions.appendChild(this.iconButton('btn-copy-error', copyLabel, ICON_COPY, {errorIndex: String(idx)}))
+                actions.appendChild(this.iconButton('btn-copy-error', copyLabel, 'copy', {errorIndex: String(idx)}))
             if (error.id)
-                actions.appendChild(this.iconButton('btn-browse-error', browseLabel, ICON_BROWSE, {errorId: error.id}))
+                actions.appendChild(this.iconButton('btn-browse-error', browseLabel, 'browse', {errorId: error.id}))
 
             head.appendChild(info)
             head.appendChild(actions)
@@ -209,9 +209,9 @@ export class PopupRenderer {
             const actions = document.createElement('div')
             actions.className = 'network-request-item-actions'
 
-            actions.appendChild(this.iconButton('btn-copy-network-request', copyLabel, ICON_COPY, {requestIndex: String(idx)}))
+            actions.appendChild(this.iconButton('btn-copy-network-request', copyLabel, 'copy', {requestIndex: String(idx)}))
             if (request.id)
-                actions.appendChild(this.iconButton('btn-browse-network-request', browseLabel, ICON_BROWSE, {requestId: request.id}))
+                actions.appendChild(this.iconButton('btn-browse-network-request', browseLabel, 'browse', {requestId: request.id}))
 
             head.appendChild(info)
             head.appendChild(actions)
@@ -322,13 +322,13 @@ export class PopupRenderer {
         return fragment
     }
 
-    private static iconButton(className: string, title: string, icon: string, data: Record<string, string>): HTMLButtonElement {
+    private static iconButton(className: string, title: string, icon: IconName, data: Record<string, string>): HTMLButtonElement {
         const button = document.createElement('button')
         button.type = 'button'
         button.className = `btn-icon btn-inline-icon ${className}`
         button.title = title
         button.setAttribute('aria-label', title)
-        button.innerHTML = icon
+        button.appendChild(IconUtils.create(icon))
         Object.entries(data).forEach(([key, value]) => {
             button.dataset[key] = value
         })

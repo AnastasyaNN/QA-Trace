@@ -5,7 +5,7 @@ import {ClipboardUtils} from "../lib/clipboard";
 import {ErrorLog, NetworkRequestLog, NetworkExchange, TabInfo} from "../lib/types";
 import {ErrorPromptUtils} from "../lib/error-prompt";
 import {PopupFormat} from "../popup/popup-format";
-import {ICON_COPY} from "../lib/icons";
+import {IconUtils} from "../lib/icons";
 
 interface DetailRecord extends NetworkExchange {
     typeLabel: string,
@@ -182,7 +182,7 @@ class DetailView {
         const button = this.el(buttonId)
         if (!button)
             return
-        button.innerHTML = ICON_COPY
+        button.replaceChildren(IconUtils.create('copy'))
         button.addEventListener('click', async () => {
             if (!(await ClipboardUtils.writeText(getText())))
                 alert(browser.i18n.getMessage('popup_failed_to_copy'))
