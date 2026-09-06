@@ -15,17 +15,17 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 
 ### Error Detection
 
-- **Console errors** — intercepts `window.onerror` and unhandled promise rejections.
-- **Network errors** — patches `fetch` and `XMLHttpRequest` to capture failed HTTP requests with status, headers, and response body.
-- **UI errors** — watches the DOM via `MutationObserver` for elements matching configurable CSS selectors (default: `div[id^="__error"]`).
-- Error monitoring can be disabled per URL — useful when a site produces noise you don't need, while still tracking user actions.
+- **Console errors** - intercepts `window.onerror` and unhandled promise rejections.
+- **Network errors** - patches `fetch` and `XMLHttpRequest` to capture failed HTTP requests with status, headers, and response body.
+- **UI errors** - watches the DOM via `MutationObserver` for elements matching configurable CSS selectors (default: `div[id^="__error"]`).
+- Error monitoring can be disabled per URL - useful when a site produces noise you don't need, while still tracking user actions.
 - Displays in-page toast notifications when errors are detected.
 - Automatically captures a screenshot for UI errors and can be copied from the popup.
 - Console and network error data is stored and can be copied in **JSON format** from the popup.
 
 ### Network Request Tracking
 
-- Optionally records all **`fetch` and `XMLHttpRequest`** requests for a URL — not just failures — by enabling **Track all fetch/XHR requests** per URL. Resource loads issued by the browser itself (the document, `<script>`/`<link>`/`<img>`, fonts) are not captured, since they don't go through `fetch`/`XHR`.
+- Optionally records all **`fetch` and `XMLHttpRequest`** requests for a URL - not just failures - by enabling **Track all fetch/XHR requests** per URL. Resource loads issued by the browser itself (the document, `<script>`/`<link>`/`<img>`, fonts) are not captured, since they don't go through `fetch`/`XHR`.
 - Captures method, URL, status, request/response headers, and bodies, with the same sensitive-data redaction applied to network errors.
 - Stored separately from errors, with a **configurable limit** (default: 150 most recent requests).
 - Shown in the popup below Recent Errors. Each request has a **Copy** button (JSON), and the whole block can be exported with **Download all** as a `.txt` file.
@@ -34,7 +34,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 
 - Tracking runs **only** on origins explicitly added to **Allowed URLs**.
 - URL query strings and hash fragments are stripped before storage by default (prevents storing session tokens).
-- The URL origin (protocol and host) is stripped before data leaves the browser by default — from tab and action URLs, error messages, stacks, headers and bodies in generated prompts and webhook payloads.
+- The URL origin (protocol and host) is stripped before data leaves the browser by default - from tab and action URLs, error messages, stacks, headers and bodies in generated prompts and webhook payloads.
 - Sensitive HTTP headers (`Authorization`, `Cookie`, API keys, tokens) are automatically redacted from network error and tracked-request payloads.
 - Sensitive fields in request/response bodies are redacted.
 - API keys and webhook passwords are encrypted with a user-provided passphrase using **AES-256-GCM** with **PBKDF2** key derivation (600,000 iterations). The passphrase is never stored.
@@ -46,9 +46,9 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 
 | Mode | Purpose |
 |---|---|
-| **Steps to Reproduce** | Concise step-by-step instructions for reproducing issues — optimized for bug tickets |
-| **Document Steps** | Neutral step documentation from actions only (no errors) — for process documentation |
-| **Full Report** | Comprehensive timeline with all actions and errors — for exploratory testing session reports |
+| **Steps to Reproduce** | Concise step-by-step instructions for reproducing issues - optimized for bug tickets |
+| **Document Steps** | Neutral step documentation from actions only (no errors) - for process documentation |
+| **Full Report** | Comprehensive timeline with all actions and errors - for exploratory testing session reports |
 
 ### Scope Controls
 
@@ -61,9 +61,9 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2)
 
 All integrations are disabled by default.
 
-- **LLM Integration** — Send generated prompts directly to OpenAI, DeepSeek, or a custom OpenAI-compatible endpoint. The response is parsed into a structured `{ summary, description }` format.
-- **Webhook Integration** — Send the prompt payload (with raw actions/errors data) to any HTTP endpoint, with optional Basic Auth.
-- **Copy to Clipboard** — Always available. Generate the prompt and copy it manually.
+- **LLM Integration** - Send generated prompts directly to OpenAI, DeepSeek, or a custom OpenAI-compatible endpoint. The response is parsed into a structured `{ summary, description }` format.
+- **Webhook Integration** - Send the prompt payload (with raw actions/errors data) to any HTTP endpoint, with optional Basic Auth.
+- **Copy to Clipboard** - Always available. Generate the prompt and copy it manually.
 
 ### Internationalization
 
@@ -130,9 +130,9 @@ Firefox removes temporary Add-ons once the browser is closed.
 
 ## Tech Stack
 
-- **TypeScript** — strict mode, ES2020 target
-- **Vite** — build tooling with [vite-plugin-web-extension](https://github.com/nicolo-ribaudo/vite-plugin-web-extension) for cross-browser manifest handling
-- **WebExtension Polyfill** — unified browser API across Chrome and Firefox
+- **TypeScript** - strict mode, ES2020 target
+- **Vite** - build tooling with [vite-plugin-web-extension](https://github.com/nicolo-ribaudo/vite-plugin-web-extension) for cross-browser manifest handling
+- **WebExtension Polyfill** - unified browser API across Chrome and Firefox
 
 ## Configuration
 
@@ -152,7 +152,7 @@ On first install, the extension opens the configuration page. You can reopen it 
 
 ## Documentation
 
-- [QA Use Cases and Workflows](docs/qa-use-cases.md) — practical guide for QA engineers
+- [QA Use Cases and Workflows](docs/qa-use-cases.md) - practical guide for QA engineers
 
 ## Contributing
 

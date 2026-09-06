@@ -20,7 +20,7 @@ function openTabAction(): UserAction {
         element: 'TAB',
         selector: '[tab]',
         timestamp: 1,
-        value: 'Open tab — https://app.internal:8443/dashboard',
+        value: 'Open tab - https://app.internal:8443/dashboard',
         tabInfo: {id: 1, url: 'https://app.internal:8443/dashboard', title: 'App'}
     }
 }
@@ -33,7 +33,7 @@ describe('ErrorPromptUtils.stripActionsForPrompt', () => {
 
     it('strips origin from value (free text) and tabInfo.url (structured)', () => {
         const [action] = ErrorPromptUtils.stripActionsForPrompt([openTabAction()], true)
-        expect(action.value).toBe('Open tab — /dashboard')
+        expect(action.value).toBe('Open tab - /dashboard')
         expect(action.tabInfo.url).toBe('/dashboard')
     })
 

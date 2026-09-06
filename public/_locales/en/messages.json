@@ -1,5 +1,5 @@
 {
-  "extName": { "message": "QA Trace – AI Bug Reports, Private & Local" },
+  "extName": { "message": "QA Trace - AI Bug Reports, Private & Local" },
   "extDescription": { "message": "Turn an exploratory testing session into an AI-ready bug report with steps to reproduce. Private & local." },
   "actionTitle": { "message": "QA Trace" },
 
@@ -173,7 +173,7 @@
   "config_redact_url_origin": {"message": "Strip origin (protocol and host) from prompts"},
   "config_redact_url_origin_desc": {"message": "When enabled, the protocol and host are removed from tab, action URLs and requests in generated prompts (e.g. /dashboard instead of https://example.com/dashboard)."},
   "config_disable_body_truncation": {"message": "Store full network bodies (disable size reduction)"},
-  "config_disable_body_truncation_desc": {"message": "Normally request and response bodies are read up to $2 characters and stored truncated to $1 characters. Enable to store full bodies — sensitive fields (password, token, etc.) are still redacted."},
+  "config_disable_body_truncation_desc": {"message": "Normally request and response bodies are read up to $2 characters and stored truncated to $1 characters. Enable to store full bodies - sensitive fields (password, token, etc.) are still redacted."},
   "config_finish": {"message":  "Finish Setup"},
 
   "config_enter_llm_key_error": {"message": "Enter an LLM API key or disable LLM integration."},

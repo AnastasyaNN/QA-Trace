@@ -1,6 +1,6 @@
-# QA Trace — Privacy Policy
+# QA Trace - Privacy Policy
 
-**Last updated:** June 5, 2026
+**Last updated:** September 6, 2026
 
 QA Trace is a browser extension that helps QA engineers capture user actions and runtime errors during exploratory testing sessions and convert them into structured reports. This policy explains what data the extension collects, how it is stored, and under what circumstances it may be transmitted externally.
 
@@ -10,11 +10,11 @@ QA Trace is a browser extension that helps QA engineers capture user actions and
 
 When tracking is active on an allowed origin, QA Trace collects:
 
-- **User actions** — event type (click, input, select, change, tab open/reload), element selector, optional input value, timestamp, tab URL, and tab title.
-- **Console errors** — error message, stack trace, and timestamp.
-- **Network errors** — HTTP method, URL, status code, request/response headers and body, and timestamp.
-- **Network requests** — when **Track all fetch/XHR requests** is enabled for an origin, the same fields (method, URL, status, request/response headers and body, timestamp) are recorded for successful `fetch`/`XMLHttpRequest` calls as well, not only failures.
-- **UI error screenshots** — a base64-encoded PNG image of the visible tab area captured when a UI error is detected.
+- **User actions** - event type (click, input, select, change, tab open/reload), element selector, optional input value, timestamp, tab URL, and tab title.
+- **Console errors** - error message, stack trace, and timestamp.
+- **Network errors** - HTTP method, URL, status code, request/response headers and body, and timestamp.
+- **Network requests** - when **Track all fetch/XHR requests** is enabled for an origin, the same fields (method, URL, status, request/response headers and body, timestamp) are recorded for successful `fetch`/`XMLHttpRequest` calls as well, not only failures.
+- **UI error screenshots** - a base64-encoded PNG image of the visible tab area captured when a UI error is detected.
 
 QA Trace does **not** collect data on pages outside your configured Allowed URLs list. Password input values are never captured.
 
@@ -47,7 +47,7 @@ QA Trace does **not** transmit any data externally by default. External transmis
 
 **Webhook integration:** sends the generated prompt, collected actions and errors, language setting, and timestamp to your configured webhook URL.
 
-**Origin redaction:** by default the URL origin (protocol and host) is stripped before transmission — from tab and action URLs, error messages, stacks, headers, and bodies — so only path, query, and hash information leaves the browser. This can be toggled in Configuration.
+**Origin redaction:** by default the URL origin (protocol and host) is stripped before transmission - from tab and action URLs, error messages, stacks, headers, and bodies - so only path, query, and hash information leaves the browser. This can be toggled in Configuration.
 
 QA Trace does not transmit data to any third-party analytics service. The extension contains no telemetry, tracking pixels, or advertising SDKs.
 
@@ -59,12 +59,12 @@ API keys and webhook passwords are encrypted with AES-256-GCM using a key derive
 
 QA Trace requests the following browser permissions:
 
-- **Host permissions** (`https://*/*`, `http://*/*`) — required to inject the content script on web pages. The content script only activates tracking on origins listed in your Allowed URLs configuration in Configuration.
-- **storage** — to store collected data and configuration locally.
-- **activeTab / tabs** — to read tab URL, title, and ID for session context.
-- **webNavigation** — to detect page navigation events.
-- **alarms** — to schedule automatic data cleanup.
-- **clipboardWrite** — to copy prompts and screenshots to your clipboard.
+- **Host permissions** (`https://*/*`, `http://*/*`) - required to inject the content script on web pages. The content script only activates tracking on origins listed in your Allowed URLs configuration in Configuration.
+- **storage** - to store collected data and configuration locally.
+- **activeTab / tabs** - to read tab URL, title, and ID for session context.
+- **webNavigation** - to detect page navigation events.
+- **alarms** - to schedule automatic data cleanup.
+- **clipboardWrite** - to copy prompts and screenshots to your clipboard.
 
 ## 7. Children's privacy
 

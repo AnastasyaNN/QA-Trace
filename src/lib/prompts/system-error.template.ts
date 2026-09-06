@@ -15,12 +15,12 @@ ${FormatTemplates.buildTabInfoFormatPrompt(promptLocale)}
 User actions and errors are stored in the following order: the recent one is the first one in the array.
 ${skipResponseFormat ? '' : FormatTemplates.buildResponseFormatPrompt('steps', promptLocale)}
 ${FormatTemplates.buildLanguageOutputPrompt(promptLocale)}`
-        : `Ты — эксперт по интерпретации хранилища действий пользователя в формате Array<UserAction>, хранилища ошибок в формате Array<Error> и по формированию тикета Jira на их основе.
+        : `Ты - эксперт по интерпретации хранилища действий пользователя в формате Array<UserAction>, хранилища ошибок в формате Array<Error> и по формированию тикета Jira на их основе.
 ${FormatTemplates.buildUserActionsFormatPrompt(promptLocale)}
 ${FormatTemplates.buildErrorLogFormatPrompt(promptLocale)}
 ${FormatTemplates.buildTabInfoFormatPrompt(promptLocale)}
 
-Действия пользователя и ошибки хранятся в следующем порядке: самая свежая запись — первая в массиве.
+Действия пользователя и ошибки хранятся в следующем порядке: самая свежая запись - первая в массиве.
 ${skipResponseFormat ? '' : FormatTemplates.buildResponseFormatPrompt('steps', promptLocale)}
 ${FormatTemplates.buildLanguageOutputPrompt(promptLocale)}`
     }

@@ -320,7 +320,7 @@ class QaTracePageHooks {
             ? reason.message
             : String(reason ?? '')
         return detail
-            ? `[QA Trace: response body could not be captured — ${detail}]`
+            ? `[QA Trace: response body could not be captured - ${detail}]`
             : '[QA Trace: response body could not be captured]'
     }
 
@@ -328,7 +328,7 @@ class QaTracePageHooks {
     // read up to the cap, so its size is reported as a lower bound.
     private static responseTooLarge(bytes: number, exact: boolean): string {
         const size = QaTracePageHooks.formatBytes(bytes)
-        return `[QA Trace: response body too large to store — ${exact ? size : 'over ' + size}]`
+        return `[QA Trace: response body too large to store - ${exact ? size : 'over ' + size}]`
     }
 
     private static formatBytes(bytes: number): string {

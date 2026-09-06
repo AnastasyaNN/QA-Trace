@@ -173,8 +173,8 @@ describe('StorageManager network requests', () => {
             networkErrorPayloads: []
         }
 
-        // Budget holds the full network log plus a single (huge) error, so the blob — not the network
-        // log — is the over-quota culprit and must be trimmed to fit.
+        // Budget holds the full network log plus a single (huge) error, so the blob - not the network
+        // log - is the over-quota culprit and must be trimmed to fit.
         const fitted = {networkRequests: store.networkRequests, storageData: {...storage, errors: storage.errors.slice(0, 1)}}
         ctrl.quotaBytes = JSON.stringify(fitted).length
 
@@ -223,7 +223,7 @@ describe('StorageManager network requests', () => {
             tab,
             'data:image/jpeg;base64,AAAA'
         )
-        // errorsLimit defaults to 50 — push it past the limit so e1 (the oldest) is trimmed out.
+        // errorsLimit defaults to 50 - push it past the limit so e1 (the oldest) is trimmed out.
         for (let i = 0; i < 60; i++)
             await StorageManager.addError({type: 'console', message: `e${i}`, timestamp: 100 + i}, tab)
 

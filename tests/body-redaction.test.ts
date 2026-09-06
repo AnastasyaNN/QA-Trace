@@ -1,7 +1,7 @@
 import {describe, it, expect} from 'vitest'
 import {BodyRedaction, MAX_RESPONSE_CHARS, MAX_BODY_REDACT_CHARS} from '../src/lib/body-redaction'
 
-describe('BodyRedaction.redact — JSON bodies', () => {
+describe('BodyRedaction.redact - JSON bodies', () => {
     it('redacts sensitive top-level keys and keeps the rest', () => {
         const out = BodyRedaction.redact('{"password":"hunter2","user":"bob"}')
         expect(out).toContain('"password":"[REDACTED]"')
@@ -34,7 +34,7 @@ describe('BodyRedaction.redact — JSON bodies', () => {
     })
 })
 
-describe('BodyRedaction.redact — non-JSON bodies', () => {
+describe('BodyRedaction.redact - non-JSON bodies', () => {
     it('redacts form-encoded sensitive values and leaves others intact', () => {
         expect(BodyRedaction.redact('user=bob&password=hunter2&page=2'))
             .toBe('user=bob&password=[REDACTED]&page=2')
@@ -72,7 +72,7 @@ describe('BodyRedaction.redact — non-JSON bodies', () => {
     })
 })
 
-describe('BodyRedaction.redact — oversized/unparseable JSON falls back to key redaction', () => {
+describe('BodyRedaction.redact - oversized/unparseable JSON falls back to key redaction', () => {
     it('redacts JSON-quoted sensitive keys when the body is too large to JSON.parse', () => {
         // Body exceeds the redact cap, so redact() truncates it into invalid JSON and hits the
         // key/value fallback; the sensitive field (in the retained prefix) must still be redacted.
@@ -90,7 +90,7 @@ describe('BodyRedaction.redact — oversized/unparseable JSON falls back to key 
     })
 })
 
-describe('BodyRedaction.redact — uncapped (no truncation)', () => {
+describe('BodyRedaction.redact - uncapped (no truncation)', () => {
     it('keeps output beyond the response cap when no caps are given', () => {
         const out = BodyRedaction.redact('note=' + 'a'.repeat(MAX_RESPONSE_CHARS * 2))
         expect(out.length).toBeGreaterThan(MAX_RESPONSE_CHARS)
@@ -105,7 +105,7 @@ describe('BodyRedaction.redact — uncapped (no truncation)', () => {
     })
 })
 
-describe('BodyRedaction.redact — ReDoS regression', () => {
+describe('BodyRedaction.redact - ReDoS regression', () => {
     // The previous regex was O(n^2): ~13s at the 100k cap. The linear rewrite must stay well under 1s.
     const budgetMs = 1000
     const cases: [string, string][] = [

@@ -66,7 +66,7 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
     await StorageManager.addUserAction({
         type: 'open_tab',
         element: 'TAB',
-        value: `Open tab — ${tabInfo.url || ''}`,
+        value: `Open tab - ${tabInfo.url || ''}`,
         selector: '[tab]',
         timestamp: Date.now()
     }, tabInfo, true)
@@ -313,7 +313,7 @@ browser.webNavigation.onCommitted.addListener((details) => {
             await StorageManager.addUserAction({
                 type: 'reload_tab',
                 element: 'TAB',
-                value: `Reload tab — ${tabInfo.url || ''}`,
+                value: `Reload tab - ${tabInfo.url || ''}`,
                 selector: '[tab]',
                 timestamp: Date.now()
             }, tabInfo, true)

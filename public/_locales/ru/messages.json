@@ -1,5 +1,5 @@
 {
-  "extName": { "message": "QA Trace – AI Bug Reports, Private & Local" },
+  "extName": { "message": "QA Trace - AI Bug Reports, Private & Local" },
   "extDescription": { "message": "AI баг-репорт с шагами воспроизведения из сессии исследовательского тестирования. Приватно и локально." },
   "actionTitle": { "message": "QA Trace" },
 
@@ -173,7 +173,7 @@
   "config_redact_url_origin": {"message": "Убирать origin (протокол и хост) из промтов"},
   "config_redact_url_origin_desc": {"message": "Протокол и хост убираются из URL вкладок, действий и запросов в сгенерированных промтах (например /dashboard вместо https://example.com/dashboard)."},
   "config_disable_body_truncation": {"message": "Сохранять body сетевых запросов полностью (отключить сокращение)"},
-  "config_disable_body_truncation_desc": {"message": "Обычно body запросов и ответов читается не более $2 символов и сохраняется с обрезкой до $1 символов. Включите, чтобы сохранять body полностью — чувствительные поля (password, token и т.д.) всё равно маскируются."},
+  "config_disable_body_truncation_desc": {"message": "Обычно body запросов и ответов читается не более $2 символов и сохраняется с обрезкой до $1 символов. Включите, чтобы сохранять body полностью - чувствительные поля (password, token и т.д.) всё равно маскируются."},
   "config_finish": {"message":  "Сохранить"},
 
   "config_enter_llm_key_error": {"message": "Введите ключ или выключите интеграцию с LLM."},

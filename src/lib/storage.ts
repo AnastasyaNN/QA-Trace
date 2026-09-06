@@ -230,7 +230,7 @@ export class StorageManager {
     }
 
     // Buffers item under key and, once per debounce window, drains the whole batch through one
-    // queued read-modify-write (flush) — collapsing N appends into ~1 write. Best-effort: a failed
+    // queued read-modify-write (flush) - collapsing N appends into ~1 write. Best-effort: a failed
     // flush is logged, never thrown, so message handlers awaiting the append don't reject.
     private static batchWrite<T>(key: string, queue: 'main' | 'network', item: T, flush: (batch: T[]) => Promise<void>, immediate = false): Promise<void> {
         const batcher = this.batchers[key] ?? (this.batchers[key] = {items: [], pending: null, flushNow: null})
@@ -296,7 +296,7 @@ export class StorageManager {
         return /quota/i.test(String(name)) || /quota/i.test(message)
     }
 
-    // Single shed policy: keep the larger (newer) half — items are unshifted to the front, so slicing
+    // Single shed policy: keep the larger (newer) half - items are unshifted to the front, so slicing
     // from 0 retains the most recent and never drops the last survivor. Returns null when the list is
     // too small to shrink, signalling shed loops to stop.
     private static halve<T>(items: T[]): T[] | null {

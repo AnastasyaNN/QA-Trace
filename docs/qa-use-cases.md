@@ -33,8 +33,8 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 - For UI errors, attempts to capture a screenshot and attach it to the error record.
 
 ### 3) Network Request Tracking (Optional, Per URL)
-- Enable **Track all fetch/XHR requests** for a specific allowed origin to record every `fetch`/`XHR` call, not just failures. (Browser-issued resource loads — document, scripts, stylesheets, images, fonts — are not captured.)
-- Captures method, URL, status, request/response headers, and bodies — with the same sensitive-data redaction used for network errors.
+- Enable **Track all fetch/XHR requests** for a specific allowed origin to record every `fetch`/`XHR` call, not just failures. (Browser-issued resource loads - document, scripts, stylesheets, images, fonts - are not captured.)
+- Captures method, URL, status, request/response headers, and bodies - with the same sensitive-data redaction used for network errors.
 - Stored separately from errors, with a configurable limit (default 150 most recent requests).
 - The popup shows the most recent requests below Recent Errors; copy any single request as JSON, or **Download all** stored requests as a `.txt` file for attaching to tickets.
 
@@ -132,7 +132,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 **How to use:**
 1. Enable **Track all fetch/XHR requests** for the origin under test in Configuration.
 2. Reproduce the flow.
-3. Open the popup, review the recent requests below Recent Errors, and copy a specific one as JSON — or **Download all** to attach the full traffic log to the ticket.
+3. Open the popup, review the recent requests below Recent Errors, and copy a specific one as JSON - or **Download all** to attach the full traffic log to the ticket.
 
 **Value:** Gives developers the real request/response context (with sensitive data redacted) instead of a vague "the data looked wrong."
 

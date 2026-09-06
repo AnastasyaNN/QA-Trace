@@ -19,12 +19,12 @@ Rules for the report:
 - Shape the output to be similar to Xray exploratory testing tool reports with clear summary and detailed narrative aligned to the provided structures.
 ${skipResponseFormat ? '' : FormatTemplates.buildResponseFormatPrompt('full', promptLocale)}
 ${FormatTemplates.buildLanguageOutputPrompt(promptLocale)}`
-        : `Ты — эксперт по интерпретации хранилища действий пользователя в формате Array<UserAction>, хранилища ошибок в формате Array<Error> и по составлению отчёта сессии исследовательского тестирования.
+        : `Ты - эксперт по интерпретации хранилища действий пользователя в формате Array<UserAction>, хранилища ошибок в формате Array<Error> и по составлению отчёта сессии исследовательского тестирования.
 ${FormatTemplates.buildUserActionsFormatPrompt(promptLocale)}
 ${FormatTemplates.buildErrorLogFormatPrompt(promptLocale)}
 ${FormatTemplates.buildTabInfoFormatPrompt(promptLocale)}
 
-Действия пользователя и ошибки хранятся в следующем порядке: самая свежая запись — первая в массиве.
+Действия пользователя и ошибки хранятся в следующем порядке: самая свежая запись - первая в массиве.
 Действия пользователя выполнены QA-инженером в ходе сессии исследовательского тестирования.
 
 Правила для отчёта:

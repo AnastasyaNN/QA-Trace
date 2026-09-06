@@ -144,7 +144,7 @@ describe('UrlPrivacy.redactUrlIfEnabled', () => {
     })
 })
 
-describe('UrlPrivacy.redactUrlIfEnabled — hash-routed SPAs (stripUrlQueryAndHashForStorage)', () => {
+describe('UrlPrivacy.redactUrlIfEnabled - hash-routed SPAs (stripUrlQueryAndHashForStorage)', () => {
 it('preserves a hash route while dropping the query string', () => {
         expect(UrlPrivacy.redactUrlIfEnabled('http://example.com:8080/?x=1#/dashboard/items', true, false))
             .toBe('http://example.com:8080/#/dashboard/items')
