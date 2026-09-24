@@ -18,7 +18,15 @@ const errorBurstByTab = new Map<string, { count: number; resetAt: number }>();
 const networkRequestBurstByTab = new Map<string, { count: number; resetAt: number }>();
 
 // Tab ids for which we already recorded `open_tab` (first navigation to an allowed origin).
+const OPEN_TAB_LOGGED_KEY = 'openTabLoggedTabIds';
 const openTabLoggedForTabId = new Set<number>();
+const openTabLoggedSeeded = browser.storage.session.get(OPEN_TAB_LOGGED_KEY)
+    .then((result) => ((result[OPEN_TAB_LOGGED_KEY] as number[] | undefined) || []).forEach((id) => openTabLoggedForTabId.add(id)))
+    .catch(() => undefined);
+
+function persistOpenTabLogged(): void {
+    void browser.storage.session.set({[OPEN_TAB_LOGGED_KEY]: [...openTabLoggedForTabId]}).catch(() => undefined)
+}
 
 function getHttpOriginFromUrl(url: string | undefined): string | null {
     if (!url)
@@ -49,11 +57,13 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
     const url = tab.url;
     if (tabId == null)
         return
+    await openTabLoggedSeeded
     if (!(await isUrlAllowedForTracking(url)))
         return
     if (openTabLoggedForTabId.has(tabId))
         return
     openTabLoggedForTabId.add(tabId)
+    persistOpenTabLogged()
     const configuration = await ExtensionConfigurationManager.getConfiguration()
     const tabInfo: TabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled({
             id: tab.id,
@@ -284,9 +294,12 @@ browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 });
 
 browser.tabs.onRemoved.addListener((tabId) => {
-    openTabLoggedForTabId.delete(tabId)
     errorBurstByTab.delete(String(tabId))
     networkRequestBurstByTab.delete(String(tabId))
+    void openTabLoggedSeeded.then(() => {
+        openTabLoggedForTabId.delete(tabId)
+        persistOpenTabLogged()
+    })
 });
 
 browser.webNavigation.onCommitted.addListener((details) => {

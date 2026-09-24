@@ -1,6 +1,6 @@
 # QA Trace - Privacy Policy
 
-**Last updated:** September 6, 2026
+**Last updated:** September 22, 2026
 
 QA Trace is a browser extension that helps QA engineers capture user actions and runtime errors during exploratory testing sessions and convert them into structured reports. This policy explains what data the extension collects, how it is stored, and under what circumstances it may be transmitted externally.
 
@@ -65,6 +65,7 @@ QA Trace requests the following browser permissions:
 - **webNavigation** - to detect page navigation events.
 - **alarms** - to schedule automatic data cleanup.
 - **clipboardWrite** - to copy prompts and screenshots to your clipboard.
+- **notifications** - to warn you when tracked data could not be saved, or the oldest data was removed, because browser storage is full.
 
 ## 7. Children's privacy
 

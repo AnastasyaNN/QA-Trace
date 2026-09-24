@@ -2,7 +2,7 @@
 
 A browser extension that tracks user actions and runtime errors during exploratory testing, then generates structured prompts to produce bug reports, step-by-step documentation, and full session reports via an LLM or webhook.
 
-Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V2), and **Yandex Browser** (Chromium-based, uses the Chrome build).
+Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V3), and **Yandex Browser** (Chromium-based, uses the Chrome build).
 
 ## Features
 
@@ -121,6 +121,8 @@ npm run build:firefox    # outputs to dist-firefox/
 3. Select any file inside the `dist-firefox/` directory (e.g., `manifest.json`).
 
 Firefox removes temporary Add-ons once the browser is closed.
+
+Firefox treats site access as optional in Manifest V3. If nothing is tracked, open `about:addons` → QA Trace → **Permissions** and make sure access to websites is allowed.
 
 #### Yandex Browser
 
