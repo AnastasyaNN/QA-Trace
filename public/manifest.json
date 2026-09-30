@@ -3,6 +3,7 @@
   "default_locale": "en",
   "name": "__MSG_extName__",
   "version": "1.2.0",
+  "{{chrome}}.minimum_chrome_version": "114",
   "description": "__MSG_extDescription__",
   "author": "Anastasia Nesterova",
   "homepage_url": "https://github.com/AnastasyaNN/QA-Trace",

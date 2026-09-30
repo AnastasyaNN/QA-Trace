@@ -3,10 +3,17 @@ import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "./integrations";
 import {IdUtils} from "./id";
 import {SavedResponse} from "../popup/popup-saved-response.ts";
+import {STORAGE_CAP_BYTES, byteLength} from "./storage-limits";
 
 const AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES = 5
 const NETWORK_REQUESTS_KEY = 'networkRequests'
+const STORAGE_SIZE_KEY_PREFIX = 'storageSize.'
+const NOTIFICATION_INTERVAL_MS = 5 * 60 * 1000
+const NOTIFIED_AT_KEY_PREFIX = 'notifiedAt.'
+const COUNTED_KEYS = ['storageData', NETWORK_REQUESTS_KEY] as const
 const RETENTION_MS = 12 * 60 * 60 * 1000
+type CountedKey = typeof COUNTED_KEYS[number]
+type StorageSizes = Record<CountedKey, number>
 const DEFAULT_STORAGE: StorageData = {
     userActions: [],
     errors: [],
@@ -20,6 +27,16 @@ export class StorageManager {
     // Per-store buffers that coalesce bursty appends into one read-modify-write per debounce window.
     private static batchers: Record<string, {items: any[], pending: Promise<void> | null, flushNow: (() => void) | null}> = {}
     private static batchDelayMs = 300
+    private static capBytes = STORAGE_CAP_BYTES
+
+    static usagePercent(data: StorageData): number | null {
+        try {
+            const bytes = this.measure(this.toBlob(data)) + this.measure(data.networkRequests)
+            return Math.min(100, Math.round(100 * bytes / this.capBytes))
+        } catch {
+            return null
+        }
+    }
 
     static async getStorage(): Promise<StorageData> {
         const result: {[key: string]: any} = await browser.storage.local.get(['storageData'])
@@ -34,8 +51,12 @@ export class StorageManager {
     }
 
     static async setStorage(data: StorageData): Promise<void> {
-        const blob: StorageData = {...data, networkRequests: []}
+        const blob = this.toBlob(data)
         await this.persist(() => ({storageData: blob}), this.makeBlobShedder(blob))
+    }
+
+    private static toBlob(data: StorageData): StorageData {
+        return {...data, networkRequests: []}
     }
 
     static async getNetworkRequestById(id: string): Promise<NetworkRequestLog | undefined> {
@@ -213,15 +234,15 @@ export class StorageManager {
         )
     }
 
-    private static async setNetworkRequests(requests: NetworkRequestLog[]): Promise<void> {
+    private static setNetworkRequests(requests: NetworkRequestLog[], shrinking = false): Promise<boolean> {
         let current = requests
-        await this.persist(() => ({[NETWORK_REQUESTS_KEY]: current}), () => {
+        return this.persist(() => ({[NETWORK_REQUESTS_KEY]: current}), () => {
             const next = this.halve(current)
             if (!next)
                 return false
             current = next
             return true
-        })
+        }, shrinking)
     }
 
     // Read-modify-write of the network log; callers already run inside the 'network' queue.
@@ -267,25 +288,115 @@ export class StorageManager {
         return nextTask
     }
 
-    // Writes are best-effort: on a storage-quota rejection we shed the oldest/heaviest data and
-    // retry until it fits. `shed` returns false when nothing more can be dropped.
-    private static async persist(buildEntries: () => Record<string, unknown>, shed: () => boolean | Promise<boolean>): Promise<void> {
+    // Best-effort: shed and retry while over the cap; once nothing more can be shed, or on a
+    // browser quota rejection, the browser has the final say.
+    private static async persist(buildEntries: () => Record<string, unknown>, shed: () => boolean | Promise<boolean>, shrinking = false): Promise<boolean> {
         while (true) {
+            const entries = buildEntries()
+            const written = this.measureWritten(entries)
+            if (!shrinking && await this.exceedsCap(written) && await shed())
+                continue
             try {
-                await browser.storage.local.set(buildEntries())
-                return
+                await browser.storage.local.set(entries)
+                await this.rememberSizes(written)
+                await this.forgetSizes(COUNTED_KEYS.filter((key) => key in entries && !(key in written)))
+                return true
             } catch (error) {
                 if (!this.isQuotaExceeded(error)) {
                     console.warn('QA Trace: storage write failed', error)
-                    this.notifyUser('storage_write_failed')
-                    return
+                    if (!shrinking)
+                        await this.notifyUser('storage_write_failed')
+                    return false
                 }
-                if (!(await shed())) {
-                    console.warn('QA Trace: storage quota exceeded; oldest data was dropped')
-                    this.notifyUser('storage_quota_dropped')
-                    return
-                }
+                if (!(await this.shedOrGiveUp(shed)))
+                    return false
             }
+        }
+    }
+
+    private static async shedOrGiveUp(shed: () => boolean | Promise<boolean>): Promise<boolean> {
+        if (await shed())
+            return true
+        console.warn('QA Trace: browser storage quota exceeded; latest data was not saved')
+        await this.notifyUser('storage_quota_dropped')
+        return false
+    }
+
+    private static measure(value: unknown): number {
+        return value == null ? 0 : byteLength(JSON.stringify(value))
+    }
+
+    private static total(sizes: StorageSizes): number {
+        return COUNTED_KEYS.reduce((sum, key) => sum + sizes[key], 0)
+    }
+
+    private static measureWritten(entries: Record<string, unknown>): Partial<StorageSizes> {
+        const written: Partial<StorageSizes> = {}
+        try {
+            for (const key of COUNTED_KEYS)
+                if (key in entries)
+                    written[key] = this.measure(entries[key])
+            return written
+        } catch (error) {
+            console.warn('QA Trace: could not measure storage write', error)
+            return {}
+        }
+    }
+
+    private static async exceedsCap(written: Partial<StorageSizes>): Promise<boolean> {
+        try {
+            const cached = await this.cachedSizes(COUNTED_KEYS.filter((key) => !(key in written)))
+            return this.total({...cached, ...written}) > this.capBytes
+        } catch (error) {
+            console.warn('QA Trace: could not measure storage, skipping cap check', error)
+            return false
+        }
+    }
+
+    private static async cachedSizes(keys: CountedKey[]): Promise<StorageSizes> {
+        const sizes: StorageSizes = {storageData: 0, [NETWORK_REQUESTS_KEY]: 0}
+        if (!keys.length)
+            return sizes
+        const cached = await this.readSizes(keys)
+        const uncached: CountedKey[] = []
+        for (const key of keys)
+            if (Number.isFinite(cached[key]))
+                sizes[key] = cached[key] as number
+            else
+                uncached.push(key)
+        if (!uncached.length)
+            return sizes
+        const local: {[key: string]: any} = await browser.storage.local.get(uncached)
+        uncached.forEach((key) => sizes[key] = this.measure(local[key]))
+        return sizes
+    }
+
+    private static async readSizes(keys: CountedKey[]): Promise<Partial<Record<CountedKey, unknown>>> {
+        try {
+            const result: {[key: string]: any} = await browser.storage.session.get(keys.map((key) => STORAGE_SIZE_KEY_PREFIX + key))
+            return Object.fromEntries(keys.map((key) => [key, result[STORAGE_SIZE_KEY_PREFIX + key]]))
+        } catch {
+            return {}
+        }
+    }
+
+    private static async rememberSizes(sizes: Partial<StorageSizes>): Promise<void> {
+        try {
+            await browser.storage.session.set(Object.fromEntries(
+                Object.entries(sizes).map(([key, bytes]) => [STORAGE_SIZE_KEY_PREFIX + key, bytes])
+            ))
+        } catch (error) {
+            console.debug('QA Trace: could not cache storage sizes', error)
+        }
+    }
+
+    private static async forgetSizes(keys: CountedKey[]): Promise<void> {
+        if (!keys.length)
+            return
+        try {
+            await browser.storage.session.remove(keys.map((key) => STORAGE_SIZE_KEY_PREFIX + key))
+        } catch (error) {
+            console.debug('QA Trace: could not clear cached storage sizes', error)
         }
     }
 
@@ -305,25 +416,38 @@ export class StorageManager {
             : null
     }
 
-    private static notifyUser(messageKey: string): void {
+    private static async notifyUser(messageKey: string): Promise<void> {
+        const stampKey = NOTIFIED_AT_KEY_PREFIX + messageKey
+        const stamped = await this.readStamp(stampKey)
+        const now = Date.now()
+        if (stamped !== undefined && now - stamped < NOTIFICATION_INTERVAL_MS)
+            return
         try {
-            void browser.notifications?.create({
+            await browser.notifications?.create({
                 type: 'basic',
                 iconUrl: browser.runtime.getURL('icons/128.png'),
                 title: browser.i18n.getMessage('extName'),
                 message: browser.i18n.getMessage(messageKey)
             })
+            await browser.storage.session.set({[stampKey]: now})
         } catch (error) {
             console.warn('QA Trace: failed to show notification', error)
         }
     }
 
-    // Round-robins the shed ladder one rung per retry (in value order) instead of draining each store
-    // before the next, so the separate network log isn't wiped before the blob's own oversized content
-    // is trimmed. Returns false once a full pass sheds nothing.
+    private static async readStamp(stampKey: string): Promise<number | undefined> {
+        try {
+            const stamped: unknown = (await browser.storage.session.get(stampKey))[stampKey]
+            return typeof stamped === 'number' ? stamped : undefined
+        } catch {
+            return undefined
+        }
+    }
+
+    // Screenshots first (largest, least essential), then round-robin so the network log isn't
+    // drained before the blob's own oversized content. Returns false once a pass sheds nothing.
     private static makeBlobShedder(data: StorageData): () => Promise<boolean> {
         const rungs: Array<() => boolean | Promise<boolean>> = [
-            () => this.dropOldestScreenshot(data),
             () => this.shedNetworkRequests(),
             () => this.replaceIfHalved(data.networkErrorPayloads, (next) => { data.networkErrorPayloads = next }),
             () => this.replaceIfHalved(data.errors, (next) => { data.errors = next }),
@@ -331,6 +455,10 @@ export class StorageManager {
         ]
         let cursor = 0
         return async () => {
+            if (this.dropOldestScreenshot(data)) {
+                this.reconcileDependentStorage(data)
+                return true
+            }
             for (let i = 0; i < rungs.length; i++) {
                 const rung = rungs[cursor]
                 cursor = (cursor + 1) % rungs.length
@@ -360,11 +488,13 @@ export class StorageManager {
 
     private static shedNetworkRequests(): Promise<boolean> {
         return this.enqueueWrite(async () => {
-            const next = this.halve(await this.getNetworkRequests())
-            if (!next)
+            try {
+                const next = this.halve(await this.getNetworkRequests())
+                return !!next && await this.setNetworkRequests(next, true)
+            } catch (error) {
+                console.warn('QA Trace: could not shed network requests', error)
                 return false
-            await this.setNetworkRequests(next)
-            return true
+            }
         }, 'network')
     }
 

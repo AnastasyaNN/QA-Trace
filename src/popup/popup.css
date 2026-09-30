@@ -192,6 +192,18 @@ header h1 {
     border: 1px solid var(--warning-border);
 }
 
+.storage-used {
+    margin: -8px 0 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.storage-used-high {
+    color: var(--danger);
+    font-weight: 600;
+}
+
 .recent-actions,
 .recent-errors {
     background: var(--surface-white);

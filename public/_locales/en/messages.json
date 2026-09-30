@@ -7,6 +7,7 @@
   "popup_recent_actions": { "message": "Latest Actions" },
   "popup_errors": { "message": "Errors" },
   "popup_network_requests": { "message": "Network Requests" },
+  "popup_storage_used": { "message": "Storage used: $1%" },
   "popup_recent_errors": { "message": "Latest Errors" },
   "popup_recent_network_requests": { "message": "Latest Network Requests" },
   "popup_get_prompt": { "message": "Get Prompt" },
@@ -189,6 +190,6 @@
   "config_select_monitoring_type_error": {"message": "Please select at least one error monitoring type"},
   "config_add_ui_selector_error": {"message": "Please add at least one UI error selector"},
   "storage_write_failed": {"message": "Couldn't save tracked data due to a browser storage error. Some actions or errors from this session may be missing."},
-  "storage_quota_dropped": {"message": "Browser storage is full. QA Trace removed the oldest tracked data to keep recording this session."}
+  "storage_quota_dropped": {"message": "Browser storage is full. QA Trace removed older tracked data and couldn't save the latest."}
 }
 

@@ -136,6 +136,13 @@ class PopupManager {
         if (errorsCount)
             errorsCount.textContent = this.popupContext.storageData.errors.length.toString()
 
+        const storageUsed = PopupDOM.getHtmlElement('storageUsed')
+        const percent = StorageManager.usagePercent(this.popupContext.storageData)
+        if (storageUsed && percent !== null) {
+            storageUsed.textContent = browser.i18n.getMessage('popup_storage_used', String(percent))
+            storageUsed.classList.toggle('storage-used-high', percent > 80)
+        }
+
         const actionsList = PopupDOM.getHtmlElement('actionsList')
         if (actionsList) {
             actionsList.replaceChildren(PopupRenderer.buildRecentActions(
