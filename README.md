@@ -2,7 +2,7 @@
 
 A browser extension that tracks user actions and runtime errors during exploratory testing, then generates structured prompts to produce bug reports, step-by-step documentation, and full session reports via an LLM or webhook.
 
-Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V3), and **Yandex Browser** (Chromium-based, uses the Chrome build).
+Available for **Google Chrome 114+** (Manifest V3), **Mozilla Firefox 142+** (Manifest V3), and **Yandex Browser** (Chromium-based, uses the Chrome build).
 
 ## Features
 
@@ -28,18 +28,19 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V3)
 - Optionally records all **`fetch` and `XMLHttpRequest`** requests for a URL - not just failures - by enabling **Track all fetch/XHR requests** per URL. Resource loads issued by the browser itself (the document, `<script>`/`<link>`/`<img>`, fonts) are not captured, since they don't go through `fetch`/`XHR`.
 - Captures method, URL, status, request/response headers, and bodies, with the same sensitive-data redaction applied to network errors.
 - Stored separately from errors, with a **configurable limit** (default: 150 most recent requests).
-- Shown in the popup below Recent Errors. Each request has a **Copy** button (JSON), and the whole block can be exported with **Download all** as a `.txt` file.
+- Shown in the popup under **Latest Network Requests**. Each request has **Copy** (JSON) and **Open in new tab** (detail view) buttons, and the whole block can be exported with **Download all** as a `.txt` file.
 
 ### Privacy and Security
 
 - Tracking runs **only** on origins explicitly added to **Allowed URLs**.
-- URL query strings and hash fragments are stripped before storage by default (prevents storing session tokens).
-- The URL origin (protocol and host) is stripped before data leaves the browser by default - from tab and action URLs, error messages, stacks, headers and bodies in generated prompts and webhook payloads.
+- URL query strings are stripped before storage by default (prevents storing session tokens). Hash route paths (`#/orders/42`) are kept so the page stays identifiable; any query or credentials inside the fragment are removed.
+- The URL origin (protocol and host) is stripped before data leaves the browser by default - from tab and action URLs, error messages and stacks in generated prompts, and additionally from headers and bodies in webhook payloads (prompts omit headers and bodies altogether).
 - Sensitive HTTP headers (`Authorization`, `Cookie`, API keys, tokens) are automatically redacted from network error and tracked-request payloads.
 - Sensitive fields in request/response bodies are redacted.
 - API keys and webhook passwords are encrypted with a user-provided passphrase using **AES-256-GCM** with **PBKDF2** key derivation (600,000 iterations). The passphrase is never stored.
 - All data is stored locally in extension storage. No remote transmission occurs unless the user explicitly enables and triggers an integration.
 - Collected data auto-expires after 12 hours.
+- Tracked data is capped at 9.5 MB. When the cap or the browser quota is reached, the oldest data is trimmed automatically and the tracked page shows an in-page warning. The popup shows storage usage with a per-category breakdown.
 - [Privacy Policy](docs/privacy-policy.md)
 
 ### Prompt Generation Modes
@@ -53,7 +54,7 @@ Available for **Google Chrome** (Manifest V3), **Mozilla Firefox** (Manifest V3)
 ### Scope Controls
 
 - Include data from **all tabs** or select specific tracked tabs.
-- Limit by **action count** (Steps/Document modes) or **time window** (Full Report mode).
+- Choose the **action to start from** and search across actions (Steps/Document modes), or a **time window** (Full Report mode).
 - Mark individual errors as **expected** to exclude them from generated prompts.
 - Add a free-text **unexpected behavior** description, even when no technical errors were captured.
 
@@ -122,7 +123,7 @@ npm run build:firefox    # outputs to dist-firefox/
 
 Firefox removes temporary Add-ons once the browser is closed.
 
-Firefox treats site access as optional in Manifest V3. If nothing is tracked, open `about:addons` → QA Trace → **Permissions** and make sure access to websites is allowed.
+Firefox grants site access at install and lets you revoke it per site. If nothing is tracked, open `about:addons` → QA Trace → **Permissions** and make sure access to websites is allowed.
 
 #### Yandex Browser
 
@@ -149,7 +150,8 @@ On first install, the extension opens the configuration page. You can reopen it 
 | **Ticket Example** | Example summary and description to guide LLM output format |
 | **Documentation Example** | Example title and steps to guide documentation output |
 | **Limits** | Max stored actions, errors, network requests, and text length per field |
-| **URL Redaction** | Strip query strings and hash fragments from stored URLs |
+| **Network bodies** | Store full request/response bodies instead of the default truncation (sensitive fields are still redacted) |
+| **URL Redaction** | Strip query strings from stored URLs (hash route paths are kept) |
 | **Origin Redaction** | Strip origin (protocol and host) from URLs in generated prompts and webhook payloads |
 
 ## Documentation

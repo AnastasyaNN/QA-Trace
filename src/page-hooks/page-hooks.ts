@@ -1,7 +1,7 @@
 // Runtime init (token/redaction flag) is sent by content script via window.postMessage.
 
 import {BodyRedaction, MAX_RESPONSE_CHARS, MAX_BODY_REDACT_CHARS} from "../lib/body-redaction";
-import {MAX_STORED_RESPONSE_BYTES, byteLength} from "../lib/storage-limits";
+import {MAX_STORED_RESPONSE_BYTES, byteLength, formatBytes} from "../lib/storage-limits";
 
 type PostKind = 'console' | 'network' | 'network-request';
 
@@ -287,9 +287,9 @@ class QaTracePageHooks {
         if (body == null)
             return ''
         if (typeof body === 'string')
-            return BodyRedaction.redact(body, this.redactCap, this.responseCap);
+            return this.redactOrMarkTooLarge(body, 'request')
         if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams)
-            return BodyRedaction.redact(body.toString(), this.redactCap, this.responseCap)
+            return this.redactOrMarkTooLarge(body.toString(), 'request')
         if (typeof FormData !== 'undefined' && body instanceof FormData) {
             const pairs: [string, string][] = []
             body.forEach((value, key) => {
@@ -327,17 +327,19 @@ class QaTracePageHooks {
 
     // exact size is known for XHR (full responseText is in memory); a streamed fetch body is only
     // read up to the cap, so its size is reported as a lower bound.
-    private static responseTooLarge(bytes: number, exact: boolean): string {
-        const size = QaTracePageHooks.formatBytes(bytes)
-        return `[QA Trace: response body too large to store - ${exact ? size : 'over ' + size}]`
+    private static bodyTooLarge(kind: 'request' | 'response', bytes: number, exact: boolean): string {
+        const size = formatBytes(bytes)
+        return `[QA Trace: ${kind} body too large to store - ${exact ? size : 'over ' + size}]`
     }
 
-    private static formatBytes(bytes: number): string {
-        if (bytes >= 1_000_000)
-            return (bytes / 1_000_000).toFixed(1) + ' MB'
-        if (bytes >= 1_000)
-            return Math.round(bytes / 1_000) + ' KB'
-        return bytes + ' B'
+    private redactOrMarkTooLarge(raw: string, kind: 'request' | 'response'): string {
+        // UTF-8 is at most 3 bytes per UTF-16 code unit, so skip the encode when it can't overflow.
+        if (this.disableBodyTruncation && raw.length * 3 > MAX_STORED_RESPONSE_BYTES) {
+            const bytes = byteLength(raw)
+            if (bytes > MAX_STORED_RESPONSE_BYTES)
+                return QaTracePageHooks.bodyTooLarge(kind, bytes, true)
+        }
+        return BodyRedaction.redact(raw, this.redactCap, this.responseCap)
     }
 
     private async readResponseBody(response: Response): Promise<string> {
@@ -350,7 +352,7 @@ class QaTracePageHooks {
             const cap = this.disableBodyTruncation ? MAX_STORED_RESPONSE_BYTES : this.redactCap
             const {text, bytes, overflow} = await this.readCappedText(response, cap)
             if (overflow && this.disableBodyTruncation)
-                return QaTracePageHooks.responseTooLarge(bytes, false)
+                return QaTracePageHooks.bodyTooLarge('response', bytes, false)
             return BodyRedaction.redact(text, this.redactCap, this.responseCap)
         } catch (error) {
             return QaTracePageHooks.responseBodyUnavailable(error)
@@ -397,13 +399,7 @@ class QaTracePageHooks {
                     : ''
             if (!raw)
                 return ''
-            // UTF-8 is at most 3 bytes per UTF-16 code unit, so skip the encode when it can't overflow.
-            if (raw.length * 3 > MAX_STORED_RESPONSE_BYTES) {
-                const bytes = byteLength(raw)
-                if (bytes > MAX_STORED_RESPONSE_BYTES)
-                    return QaTracePageHooks.responseTooLarge(bytes, true)
-            }
-            return BodyRedaction.redact(raw, this.redactCap, this.responseCap)
+            return this.redactOrMarkTooLarge(raw, 'response')
         } catch (error) {
             return QaTracePageHooks.responseBodyUnavailable(error)
         }
@@ -488,7 +484,10 @@ class QaTracePageHooks {
             if (self.isBinaryContentType(requestClone.headers.get('content-type')))
                 return ''
             try {
-                const {text} = await self.readCappedText(requestClone, self.redactCap)
+                const cap = self.disableBodyTruncation ? MAX_STORED_RESPONSE_BYTES : self.redactCap
+                const {text, bytes, overflow} = await self.readCappedText(requestClone, cap)
+                if (overflow && self.disableBodyTruncation)
+                    return QaTracePageHooks.bodyTooLarge('request', bytes, false)
                 return BodyRedaction.redact(text, self.redactCap, self.responseCap)
             } catch {
                 return ''

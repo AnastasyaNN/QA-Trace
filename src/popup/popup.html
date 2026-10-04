@@ -21,35 +21,41 @@
     </header>
 
     <div class="stats" id="statsGrid">
-        <div class="stat-card stat-card-user-actions">
+        <div class="stat-card stat-card-user-actions" role="button" tabindex="0" data-section="recentActionsSection">
             <span id="userActionsCount">0</span>
             <h3 data-i18n-key="popup_user_actions">User Actions</h3>
         </div>
-        <div class="stat-card stat-card-errors">
+        <div class="stat-card stat-card-errors" role="button" tabindex="0" data-section="recentErrorsSection">
             <span id="errorsCount">0</span>
             <h3 data-i18n-key="popup_errors">Errors</h3>
         </div>
-        <div class="stat-card stat-card-network-requests" id="networkRequestsStatCard">
+        <div class="stat-card stat-card-network-requests" id="networkRequestsStatCard"
+             role="button" tabindex="0" data-section="recentNetworkRequestsSection">
             <span id="networkRequestsCount">0</span>
             <h3 data-i18n-key="popup_network_requests">Network Requests</h3>
         </div>
+        <div class="stat-card stat-card-storage" id="storageStatCard"
+             role="button" tabindex="0" data-section="storageBreakdownSection">
+            <span id="storageUsedPercent">0%</span>
+            <h3 data-i18n-key="popup_storage">Storage</h3>
+            <small id="storageUsedBytes"></small>
+        </div>
     </div>
-    <div id="storageUsed" class="storage-used"></div>
 
     <div class="view-scroll">
-        <div class="recent-actions">
-            <h3 data-i18n-key="popup_recent_actions">Recent Actions</h3>
+        <div class="recent-actions" id="recentActionsSection">
+            <h3 data-i18n-key="popup_recent_actions">Latest Actions</h3>
             <div id="actionsList" class="actions-list"></div>
         </div>
 
-        <div class="recent-errors">
-            <h3 data-i18n-key="popup_recent_errors">Recent Errors</h3>
+        <div class="recent-errors" id="recentErrorsSection">
+            <h3 data-i18n-key="popup_recent_errors">Latest Errors</h3>
             <div id="errorsList" class="errors-list"></div>
         </div>
 
         <div class="recent-network-requests" id="recentNetworkRequestsSection">
             <div class="recent-network-requests-head">
-                <h3 data-i18n-key="popup_recent_network_requests">Recent Network Requests</h3>
+                <h3 data-i18n-key="popup_recent_network_requests">Latest Network Requests</h3>
                 <button type="button" id="downloadNetworkRequests" class="btn btn-secondary btn-inline"
                         data-i18n-key="popup_download_network_requests">Download all
                 </button>
@@ -75,6 +81,11 @@
                             data-i18n-key="popup_copy" data-i18n-attr="title" title="Copy" aria-label="Copy"></button>
                 </div>
             </div>
+        </div>
+
+        <div class="storage-breakdown" id="storageBreakdownSection">
+            <h3 data-i18n-key="popup_storage_breakdown">Storage data used</h3>
+            <div id="storageBreakdown" class="storage-breakdown-list"></div>
         </div>
     </div>
 
@@ -122,7 +133,7 @@
                 <div class="radio-content">
                     <div class="radio-title" data-i18n-key="popup_mode_document_title">Document steps</div>
                     <div class="radio-description" data-i18n-key="popup_mode_document_desc">
-                        Generate step documentation from tracked actions only (no errors in the prompt).
+                        Generate neutral step-by-step documentation from actions only. Same prompt style as ticket steps, without errors or unexpected-behavior fields.
                     </div>
                 </div>
             </div>
@@ -151,7 +162,7 @@
         <div class="checkbox-group">
             <input type="checkbox" id="includeAllTabs" class="checkbox-input">
             <label for="includeAllTabs" class="checkbox-label">
-                <span data-i18n-key="popup_include_all_tabs">Include actions from all tabs</span>
+                <span data-i18n-key="popup_include_all_tabs">All tabs</span>
                 <span class="badge" id="tabsCountBadge">0 tabs</span>
             </label>
         </div>
@@ -180,7 +191,7 @@
             <div class="checkbox-group">
                 <input type="checkbox" id="selectAllActions" class="checkbox-input">
                 <label for="selectAllActions" class="checkbox-label">
-                    <span data-i18n-key="popup_select_all">Select all actions</span>
+                    <span data-i18n-key="popup_select_all">All actions</span>
                     <span class="badge" id="availableActionsBadge">0/0 selected</span>
                 </label>
             </div>

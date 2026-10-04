@@ -34,24 +34,25 @@ export const DEFAULT_CONFIGURATION: ExtensionConfiguration = {
 };
 
 export class ExtensionConfigurationManager {
-    private static cachedConfiguration: ExtensionConfiguration | null = null
-    private static listenerRegistered = false
-
-    private static ensureStorageListener(): void {
-        if (this.listenerRegistered)
-            return
-        this.listenerRegistered = true
-        browser.storage.onChanged.addListener((changes, areaName) => {
-            if (areaName === 'local' && changes.configuration) {
-                this.cachedConfiguration = null
-            }
-        });
-    }
+    private static pending: Promise<ExtensionConfiguration> | null = null
 
     static async getConfiguration(): Promise<ExtensionConfiguration> {
-        this.ensureStorageListener()
-        if (this.cachedConfiguration)
-            return this.cachedConfiguration
+        if (!this.pending) {
+            const read = this.readConfiguration()
+            read.catch(() => {
+                if (this.pending === read)
+                    this.pending = null
+            })
+            this.pending = read
+        }
+        return this.pending
+    }
+
+    static invalidate(): void {
+        this.pending = null
+    }
+
+    private static async readConfiguration(): Promise<ExtensionConfiguration> {
         const result: {[key: string]: any} = await browser.storage.local.get(['configuration'])
         const stored: ExtensionConfiguration | undefined = result.configuration
         const merged: ExtensionConfiguration = {
@@ -72,7 +73,6 @@ export class ExtensionConfigurationManager {
         if (webhookAny?.password)
             webhookAny.password = ''
         merged.allowedUrls = AllowedOrigins.normalizeAllowedUrls(merged.allowedUrls)
-        this.cachedConfiguration = merged
         return merged
     }
 
@@ -93,5 +93,7 @@ export class ExtensionConfigurationManager {
         if (sanitized.webhook?.password)
             sanitized.webhook.password = ''
         await browser.storage.local.set({ configuration: sanitized })
+        this.invalidate()
+        await browser.runtime.sendMessage({type: 'CONFIGURATION_CHANGED'}).catch(() => undefined)
     }
 }

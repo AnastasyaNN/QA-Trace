@@ -27,6 +27,7 @@ const BEARER_REGEX = /\bBearer\s+[A-Za-z0-9._\-]+/gi
 
 export const MAX_RESPONSE_CHARS = 12_000
 export const MAX_BODY_REDACT_CHARS = 100_000
+export const MAX_TEXT_FIELD_LENGTH = 5_000
 
 export class BodyRedaction {
     static isSensitiveKey(name: string): boolean {

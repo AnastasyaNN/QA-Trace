@@ -3,6 +3,7 @@ import {ExtensionConfigurationManager} from "../lib/integrations";
 import {TextUtils} from "../lib/text";
 import {AllowedOrigins} from "../lib/allowed-origins";
 import {Messaging} from "../lib/messaging";
+import {TOAST_CONTAINER_CLASS} from "./page-monitor";
 
 // Nearest semantic control when the click target is nested (e.g. SPAN inside BUTTON).
 const PRIMARY_INTERACTIVE_TAGS = new Set([
@@ -125,6 +126,9 @@ export class UserActionTracker {
         const ignoreTypes = ['hidden']
 
         if (ignoreTags.includes(tagName))
+            return false
+
+        if (element.closest(`.${TOAST_CONTAINER_CLASS}`))
             return false
 
         if (element instanceof HTMLInputElement)

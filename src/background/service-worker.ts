@@ -5,28 +5,68 @@ import {ExtensionConfigurationManager} from "../lib/integrations";
 import {ScreenshotUtils} from "../lib/screenshots";
 import {AllowedOrigins} from "../lib/allowed-origins";
 import {UrlPrivacy} from "../lib/url-privacy";
-import {BodyRedaction} from "../lib/body-redaction";
+import {BodyRedaction, MAX_TEXT_FIELD_LENGTH} from "../lib/body-redaction";
+import {isStorageWarning, StorageWarning} from "../lib/storage-limits";
 import {Runtime} from "webextension-polyfill";
 import MessageSender = Runtime.MessageSender;
-
-const MAX_TEXT_FIELD_LENGTH = 5000;
 
 const BURST_WINDOW_MS = 60_000;
 const ERROR_BURST_MAX = 120;
 const NETWORK_REQUEST_BURST_MAX = 600;
+const CLEANUP_ALARM = 'cleanup-old-data';
 const errorBurstByTab = new Map<string, { count: number; resetAt: number }>();
 const networkRequestBurstByTab = new Map<string, { count: number; resetAt: number }>();
 
-// Tab ids for which we already recorded `open_tab` (first navigation to an allowed origin).
-const OPEN_TAB_LOGGED_KEY = 'openTabLoggedTabIds';
-const openTabLoggedForTabId = new Set<number>();
-const openTabLoggedSeeded = browser.storage.session.get(OPEN_TAB_LOGGED_KEY)
-    .then((result) => ((result[OPEN_TAB_LOGGED_KEY] as number[] | undefined) || []).forEach((id) => openTabLoggedForTabId.add(id)))
-    .catch(() => undefined);
-
-function persistOpenTabLogged(): void {
-    void browser.storage.session.set({[OPEN_TAB_LOGGED_KEY]: [...openTabLoggedForTabId]}).catch(() => undefined)
+function sessionSet<T>(key: string) {
+    const items = new Set<T>()
+    const seeded = browser.storage.session.get(key)
+        .then((result) => ((result[key] as T[] | undefined) || []).forEach((item) => items.add(item)))
+        .catch(() => undefined)
+    const persist = () => void browser.storage.session.set({[key]: [...items]}).catch(() => undefined)
+    return {items, seeded, persist}
 }
+
+// Tab ids for which we already recorded `open_tab` (first navigation to an allowed origin).
+const openTabLogged = sessionSet<number>('openTabLoggedTabIds');
+// Storage warnings wait here until a visible tracked tab has shown them as a toast.
+const pendingWarnings = sessionSet<StorageWarning>('pendingStorageWarnings');
+let lastEventTabId: number | undefined;
+let deliveringWarnings: Promise<void> | null = null;
+
+function deliverStorageWarnings(tabId: number | undefined): Promise<void> {
+    if (tabId == null || deliveringWarnings)
+        return Promise.resolve()
+    deliveringWarnings = (async () => {
+        await pendingWarnings.seeded
+        const flagged = await StorageManager.flaggedWarnings()
+        const stale = [...pendingWarnings.items].filter((warning) => !flagged.has(warning))
+        stale.forEach((warning) => pendingWarnings.items.delete(warning))
+        if (stale.length)
+            pendingWarnings.persist()
+        if (!pendingWarnings.items.size)
+            return
+        const warnings = [...pendingWarnings.items]
+        const shown = await browser.tabs.sendMessage(tabId, {type: 'STORAGE_WARNING', warnings}).catch(() => [])
+        const delivered = (Array.isArray(shown) ? shown : []).filter(isStorageWarning)
+        if (!delivered.length)
+            return
+        delivered.forEach((warning) => pendingWarnings.items.delete(warning))
+        pendingWarnings.persist()
+    })().finally(() => {
+        deliveringWarnings = null
+    })
+    return deliveringWarnings
+}
+
+async function queueStorageWarning(warning: StorageWarning): Promise<void> {
+    await pendingWarnings.seeded
+    pendingWarnings.items.add(warning)
+    pendingWarnings.persist()
+    await deliveringWarnings
+    await deliverStorageWarnings(lastEventTabId)
+}
+
+StorageManager.onWarning = (warning) => void queueStorageWarning(warning)
 
 function getHttpOriginFromUrl(url: string | undefined): string | null {
     if (!url)
@@ -57,13 +97,13 @@ async function maybeRecordOpenTab(tab: browser.Tabs.Tab): Promise<void> {
     const url = tab.url;
     if (tabId == null)
         return
-    await openTabLoggedSeeded
+    await openTabLogged.seeded
     if (!(await isUrlAllowedForTracking(url)))
         return
-    if (openTabLoggedForTabId.has(tabId))
+    if (openTabLogged.items.has(tabId))
         return
-    openTabLoggedForTabId.add(tabId)
-    persistOpenTabLogged()
+    openTabLogged.items.add(tabId)
+    openTabLogged.persist()
     const configuration = await ExtensionConfigurationManager.getConfiguration()
     const tabInfo: TabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled({
             id: tab.id,
@@ -257,15 +297,35 @@ async function handleNetworkRequestDetected(message: any, sender: MessageSender,
     await StorageManager.addNetworkRequest(networkRequest, tabInfo)
 }
 
-browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender) => {
+const TRACKED_EVENTS = new Set(['USER_ACTION', 'ERROR_DETECTED', 'NETWORK_REQUEST_DETECTED'])
+
+// @ts-ignore
+browser.runtime.onMessage.addListener((message: any, sender: MessageSender, sendResponse: (response?: unknown) => void) => {
+    const handled = handleMessage(message, sender).catch((error) => console.warn('QA Trace: message handling failed', error))
+    if (TRACKED_EVENTS.has(message?.type))
+        return false
+    void handled.finally(() => sendResponse())
+    return true
+});
+
+async function handleMessage(message: any, sender: MessageSender): Promise<void> {
     if (!message || typeof message !== 'object' || typeof message.type !== 'string')
         return
     if (!isTrustedExtensionSender(sender))
         return
+    if (message.type === 'CONFIGURATION_CHANGED') {
+        ExtensionConfigurationManager.invalidate()
+        await notifyTabsOfConfigurationChange()
+        return
+    }
     const configuration = await ExtensionConfigurationManager.getConfiguration()
     const redactQuery = !!configuration.redactUrlQueryParams
     const disableBodyTruncation = !!configuration.disableBodyTruncation
     const tabInfo = UrlPrivacy.redactTabInfoUrlIfEnabled(getTabInfoFromSender(sender), redactQuery, false)
+    if (sender.tab?.id != null && TRACKED_EVENTS.has(message.type)) {
+        lastEventTabId = sender.tab.id
+        void deliverStorageWarnings(lastEventTabId)
+    }
 
     switch (message.type) {
         case 'USER_ACTION':
@@ -280,8 +340,18 @@ browser.runtime.onMessage.addListener(async (message: any, sender: MessageSender
         case 'CLEAR_DATA':
             await StorageManager.clearData()
             break
+        case 'CLEANUP_OLD_DATA':
+            await StorageManager.cleanupOldData()
+            break
     }
-});
+}
+
+async function notifyTabsOfConfigurationChange(): Promise<void> {
+    const tabs = await browser.tabs.query({url: ['http://*/*', 'https://*/*']})
+    await Promise.all(tabs.map((tab) => tab.id == null
+        ? undefined
+        : browser.tabs.sendMessage(tab.id, {type: 'CONFIGURATION_CHANGED'}).catch(() => undefined)))
+}
 
 browser.tabs.onCreated.addListener((tab) => {
     void maybeRecordOpenTab(tab)
@@ -296,9 +366,9 @@ browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 browser.tabs.onRemoved.addListener((tabId) => {
     errorBurstByTab.delete(String(tabId))
     networkRequestBurstByTab.delete(String(tabId))
-    void openTabLoggedSeeded.then(() => {
-        openTabLoggedForTabId.delete(tabId)
-        persistOpenTabLogged()
+    void openTabLogged.seeded.then(() => {
+        openTabLogged.items.delete(tabId)
+        openTabLogged.persist()
     })
 });
 
@@ -348,23 +418,38 @@ browser.runtime.onInstalled.addListener(async function (details) {
         //empty for now
     }
 
-    try {
-        await StorageManager.cleanupOldData()
-    } catch (error) {
-        console.debug(browser.i18n.getMessage('popup_failed_to_cleanup_old_data', 'on startup'), error)
-    }
+    await createCleanupAlarm()
+    await runStorageMaintenance()
 });
 
-browser.alarms.create('cleanup-old-data', {periodInMinutes: 60});
-
-browser.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === 'cleanup-old-data') {
+async function runStorageMaintenance(): Promise<void> {
+    const tasks: Array<[string, () => Promise<void>]> = [
+        ['cleanupOldData', () => StorageManager.cleanupOldData()],
+        ['sweepNetworkEntries', () => StorageManager.sweepNetworkEntries()]
+    ]
+    for (const [name, task] of tasks) {
         try {
-            await StorageManager.cleanupOldData();
+            await task()
         } catch (error) {
-            console.debug(browser.i18n.getMessage('popup_failed_to_cleanup_old_data'), error);
+            console.debug(`QA Trace: ${name} failed`, error)
         }
     }
+}
+
+async function createCleanupAlarm(): Promise<void> {
+    await browser.alarms.create(CLEANUP_ALARM, {periodInMinutes: 60})
+}
+
+async function ensureCleanupAlarm(): Promise<void> {
+    if (!(await browser.alarms.get(CLEANUP_ALARM)))
+        await createCleanupAlarm()
+}
+
+ensureCleanupAlarm().catch((error) => console.debug('QA Trace: could not schedule cleanup', error))
+
+browser.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === CLEANUP_ALARM)
+        await runStorageMaintenance()
 });
 
 function getTabInfoFromSender(sender: browser.Runtime.MessageSender): TabInfo {

@@ -6,7 +6,7 @@ import {ConfigDOM} from "./configuration-dom";
 import {DynamicFields} from "./configuration-dynamic-fields";
 import {ConfigIntegrations} from "./configuration-integrations";
 import {ConfigSave} from "./configuration-save";
-import {MAX_BODY_REDACT_CHARS, MAX_RESPONSE_CHARS} from "../lib/body-redaction.ts";
+import {MAX_BODY_REDACT_CHARS, MAX_TEXT_FIELD_LENGTH} from "../lib/body-redaction.ts";
 
 class ConfigurationPage {
     private existingConfiguration: ExtensionConfiguration = DEFAULT_CONFIGURATION
@@ -135,7 +135,7 @@ class ConfigurationPage {
             disableBodyTruncationDescEl.textContent = browser.i18n.getMessage(
                 'config_disable_body_truncation_desc',
                 [
-                    String(MAX_RESPONSE_CHARS),
+                    String(MAX_TEXT_FIELD_LENGTH),
                     String(MAX_BODY_REDACT_CHARS)
                 ]
             )

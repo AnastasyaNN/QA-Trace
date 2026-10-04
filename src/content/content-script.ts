@@ -42,18 +42,20 @@ async function init() {
         }
     }
 
-    browser.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== 'local' || !changes.configuration)
-            return
-        void ExtensionConfigurationManager.getConfiguration().then((config) => {
-            const currentOrigin = window.location.origin
-            if (!AllowedOrigins.isOriginAllowed(currentOrigin, config.allowedUrls))
-                actionTracker.stopTracking()
-        })
-    });
-
     // @ts-ignore
     browser.runtime.onMessage.addListener((message: any, _sender: browser.Runtime.MessageSender, sendResponse: (response: unknown) => void) => {
+        if (message.type === 'CONFIGURATION_CHANGED') {
+            ExtensionConfigurationManager.invalidate()
+            void ExtensionConfigurationManager.getConfiguration().then((config) => {
+                if (!AllowedOrigins.isOriginAllowed(window.location.origin, config.allowedUrls))
+                    actionTracker.stopTracking()
+            })
+            return
+        }
+        if (message.type === 'STORAGE_WARNING') {
+            sendResponse(document.visibilityState === 'visible' ? PageMonitor.getInstance().showStorageWarnings(message.warnings) : [])
+            return true
+        }
         if (message.type === 'GET_PAGE_INFO') {
             void ExtensionConfigurationManager.getConfiguration().then((config) => {
                 const href = window.location.href

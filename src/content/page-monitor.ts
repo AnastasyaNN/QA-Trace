@@ -4,6 +4,12 @@ import {ExtensionConfigurationManager} from "../lib/integrations";
 import {TextUtils} from "../lib/text";
 import {Messaging} from "../lib/messaging";
 import {IdUtils} from "../lib/id";
+import {STORAGE_WARNING_PERCENT, StorageWarning, isStorageWarning} from "../lib/storage-limits";
+
+export const TOAST_CONTAINER_CLASS = 'qa-trace-toast-container'
+const ERROR_TOAST_MS = 6000
+const STORAGE_TOAST_MS = 10_000
+const TOAST_FADE_MS = 400
 
 export class PageMonitor {
     private static instance: PageMonitor
@@ -16,7 +22,8 @@ export class PageMonitor {
     private readonly pageMessageToken = IdUtils.generate(10)
     private toastContainer: HTMLElement | null = null
     private activeUiToastAnchors: WeakMap<HTMLElement, number> = new WeakMap()
-    private readonly toastLifetimeMs = 6400
+    private activeStorageWarnings = new Map<StorageWarning, HTMLElement>()
+    private readonly toastLifetimeMs = ERROR_TOAST_MS + TOAST_FADE_MS
 
     static getInstance(): PageMonitor {
         if (!PageMonitor.instance)
@@ -244,35 +251,59 @@ export class PageMonitor {
         this.activeUiToastAnchors.set(element, Date.now() + this.toastLifetimeMs)
     }
 
-    private showToast(message: string, type: ErrorLog['type']) {
-        this.ensureToastContainer()
-        if (!this.toastContainer)
-            return
+    showStorageWarnings(input: unknown): StorageWarning[] {
+        return (Array.isArray(input) ? input : []).filter(isStorageWarning).filter((warning) => {
+            if (this.activeStorageWarnings.get(warning)?.isConnected)
+                return true
+            const text = browser.i18n.getMessage('storage_warning_' + warning, String(STORAGE_WARNING_PERCENT))
+            const toast = this.appendToast(text, 'qa-trace-storage', STORAGE_TOAST_MS, (hidden) => {
+                if (this.activeStorageWarnings.get(warning) === hidden)
+                    this.activeStorageWarnings.delete(warning)
+            })
+            if (toast)
+                this.activeStorageWarnings.set(warning, toast)
+            return toast !== null
+        })
+    }
 
-        const toast = document.createElement('div')
+    private showToast(message: string, type: ErrorLog['type']) {
         const safeType = type === 'user'
             ? 'ui'
             : (type || 'ui')
-        const safeMessage = message || 'Error detected'
-        toast.className = `qa-trace-toast qa-trace-${safeType}`
-        toast.textContent = safeMessage
+        this.appendToast(message || 'Error detected', `qa-trace-${safeType}`, ERROR_TOAST_MS)
+    }
 
-        this.toastContainer.appendChild(toast)
-        setTimeout(() => {
+    private appendToast(message: string, className: string, lifetimeMs: number, onHide?: (toast: HTMLElement) => void): HTMLElement | null {
+        this.ensureToastContainer()
+        if (!this.toastContainer)
+            return null
+
+        const toast = document.createElement('div')
+        toast.className = `qa-trace-toast ${className}`
+        toast.textContent = message
+        const hide = () => {
+            if (toast.classList.contains('qa-trace-hide'))
+                return
+            clearTimeout(timer)
             toast.classList.add('qa-trace-hide')
-            setTimeout(() => toast.remove(), 400)
-        }, 6000)
+            setTimeout(() => toast.remove(), TOAST_FADE_MS)
+            onHide?.(toast)
+        }
+        const timer = setTimeout(hide, lifetimeMs)
+        toast.addEventListener('click', hide, {once: true})
+        this.toastContainer.appendChild(toast)
+        return toast
     }
 
     private ensureToastContainer() {
-        if (this.toastContainer)
+        if (this.toastContainer?.isConnected)
             return
         // Errors can be captured at document_start, before <body> exists; skip the visual
         // toast in that case (the error itself is still recorded via messaging).
         if (!document.body)
             return
         const container = document.createElement('div')
-        container.className = 'qa-trace-toast-container'
+        container.className = TOAST_CONTAINER_CLASS
         document.body.appendChild(container)
         this.toastContainer = container
         this.injectStyles()
@@ -284,7 +315,7 @@ export class PageMonitor {
         const style = document.createElement('style')
         style.id = 'qa-trace-styles'
         style.textContent = `
-.qa-trace-toast-container {
+.${TOAST_CONTAINER_CLASS} {
   position: fixed;
   top: 12px;
   right: 12px;
@@ -309,10 +340,13 @@ export class PageMonitor {
   opacity: 0.95;
   transition: opacity 0.3s ease, transform 0.3s ease;
   transform: translateY(0);
+  pointer-events: auto;
+  cursor: pointer;
 }
 .qa-trace-toast.qa-trace-console { border-left: 3px solid #f59e0b; }
 .qa-trace-toast.qa-trace-network { border-left: 3px solid #ef4444; }
 .qa-trace-toast.qa-trace-ui { border-left: 3px solid #8b5cf6; }
+.qa-trace-toast.qa-trace-storage { background: #214363; }
 .qa-trace-hide { opacity: 0; transform: translateY(-6px); }
 .qa-trace-inline-error {
   position: absolute;
