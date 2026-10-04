@@ -3,10 +3,22 @@ import * as browser from "webextension-polyfill";
 import {ExtensionConfigurationManager} from "./integrations";
 import {IdUtils} from "./id";
 import {SavedResponse} from "../popup/popup-saved-response.ts";
+import {STORAGE_CAP_BYTES, STORAGE_WARNING_PERCENT, StorageUsage, StorageWarning, byteLength, usagePercentOf} from "./storage-limits";
 
 const AMOUNT_OF_ELEMENTS_IN_ADDITIONAL_ERROR_STORAGES = 5
-const NETWORK_REQUESTS_KEY = 'networkRequests'
+const LEGACY_NETWORK_KEY = 'networkRequests'
+const NETWORK_INDEX_KEY = 'networkRequestIndex'
+const NETWORK_ENTRY_PREFIX = 'networkRequest.'
+const STORAGE_SIZE_KEY_PREFIX = 'storageSize.'
+const STORAGE_WARNED_KEY = 'storageWarned'
+const COUNTED_KEYS = ['storageData', 'networkLog'] as const
 const RETENTION_MS = 12 * 60 * 60 * 1000
+type CountedKey = typeof COUNTED_KEYS[number]
+type StorageSizes = Record<CountedKey, number>
+type StoredRequest = NetworkRequestLog & {id: string}
+type NetworkIndexEntry = {id: string, timestamp: number, bytes: number}
+type NetworkWrite = {index: NetworkIndexEntry[], set: Record<string, StoredRequest>, remove: string[]}
+type ShedTrigger = {reason: 'cap', excess: number, written: number} | {reason: 'quota'}
 const DEFAULT_STORAGE: StorageData = {
     userActions: [],
     errors: [],
@@ -20,38 +32,111 @@ export class StorageManager {
     // Per-store buffers that coalesce bursty appends into one read-modify-write per debounce window.
     private static batchers: Record<string, {items: any[], pending: Promise<void> | null, flushNow: (() => void) | null}> = {}
     private static batchDelayMs = 300
+    private static capBytes = STORAGE_CAP_BYTES
+    private static warned: Promise<Set<StorageWarning>> | null = null
+    static onWarning: ((warning: StorageWarning) => void) | undefined
 
-    static async getStorage(): Promise<StorageData> {
-        const result: {[key: string]: any} = await browser.storage.local.get(['storageData'])
-        const data = result.storageData || {}
-        return {
-            userActions: data.userActions || [],
-            errors: data.errors || [],
-            networkRequests: [],
-            uiErrorScreenshots: data.uiErrorScreenshots || [],
-            networkErrorPayloads: data.networkErrorPayloads || []
+    static storageUsage(data: StorageData): StorageUsage | null {
+        try {
+            const size = (items: unknown[]) => items.length ? this.measure(items) : 0
+            const userActions = size(data.userActions)
+            const errors = size(data.errors) + size(data.uiErrorScreenshots) + size(data.networkErrorPayloads)
+            const requests = size(data.networkRequests)
+            const bytes = userActions + errors + requests
+            return {bytes, percent: usagePercentOf(bytes, this.capBytes), userActions, errors, requests}
+        } catch {
+            return null
         }
     }
 
+    static async getStorage(): Promise<StorageData> {
+        return (await this.readBlob()).storage
+    }
+
+    private static async readBlob(): Promise<{storage: StorageData, legacyRequests: boolean}> {
+        const result: {[key: string]: any} = await browser.storage.local.get(['storageData'])
+        const data = result.storageData || {}
+        return {
+            storage: {
+                userActions: data.userActions || [],
+                errors: data.errors || [],
+                networkRequests: [],
+                uiErrorScreenshots: data.uiErrorScreenshots || [],
+                networkErrorPayloads: data.networkErrorPayloads || []
+            },
+            legacyRequests: !!this.asArray(data.networkRequests)?.length
+        }
+    }
+
+    private static itemCount(data: StorageData): number {
+        return (Object.keys(DEFAULT_STORAGE) as Array<keyof StorageData>).reduce((sum, key) => sum + (this.asArray(data[key])?.length ?? 0), 0)
+    }
+
     static async setStorage(data: StorageData): Promise<void> {
-        const blob: StorageData = {...data, networkRequests: []}
+        const blob = this.toBlob(data)
         await this.persist(() => ({storageData: blob}), this.makeBlobShedder(blob))
     }
 
+    private static toBlob(data: StorageData): StorageData {
+        return {...data, networkRequests: []}
+    }
+
     static async getNetworkRequestById(id: string): Promise<NetworkRequestLog | undefined> {
-        const requests = await this.getNetworkRequests()
+        const key = this.entryKey(id)
+        const result: {[key: string]: any} = await browser.storage.local.get([NETWORK_INDEX_KEY, key])
+        const index = this.toIndex(result[NETWORK_INDEX_KEY])
+        if (index)
+            return index.some((entry) => entry.id === id) ? result[key] : undefined
+        const requests = await this.readLegacyRequests()
         return requests.find((request) => request.id === id)
     }
 
-    // Own key, with a read-only fallback to legacy in-blob requests. The blob is read lazily so the
-    // hot path avoids deserializing it. Not migrated on read: a write here would deadlock callers
-    // already running on the 'network' queue.
     static async getNetworkRequests(): Promise<NetworkRequestLog[]> {
-        const result: {[key: string]: any} = await browser.storage.local.get(NETWORK_REQUESTS_KEY)
-        if (result[NETWORK_REQUESTS_KEY] != null)
-            return result[NETWORK_REQUESTS_KEY]
-        const legacy: {[key: string]: any} = await browser.storage.local.get('storageData')
-        return legacy.storageData?.networkRequests ?? []
+        const index = await this.readIndex()
+        return index ? this.readEntries(index) : this.readLegacyRequests()
+    }
+
+    private static async readIndex(): Promise<NetworkIndexEntry[] | undefined> {
+        return this.toIndex(await this.readRawIndex())
+    }
+
+    private static async readRawIndex(): Promise<unknown> {
+        const result: {[key: string]: any} = await browser.storage.local.get(NETWORK_INDEX_KEY)
+        return result[NETWORK_INDEX_KEY]
+    }
+
+    private static toIndex(value: unknown): NetworkIndexEntry[] | undefined {
+        return this.asArray<NetworkIndexEntry>(value)?.filter((entry) =>
+            typeof entry?.id === 'string' && Number.isFinite(entry.timestamp) && Number.isFinite(entry.bytes)
+        )
+    }
+
+    private static asArray<T>(value: unknown): T[] | undefined {
+        return Array.isArray(value) ? value : undefined
+    }
+
+    private static async readEntries(index: NetworkIndexEntry[]): Promise<NetworkRequestLog[]> {
+        if (!index.length)
+            return []
+        const records: {[key: string]: any} = await browser.storage.local.get(index.map((entry) => this.entryKey(entry.id)))
+        return index.map((entry) => records[this.entryKey(entry.id)]).filter(Boolean)
+    }
+
+    private static async readLegacyRequests(): Promise<NetworkRequestLog[]> {
+        const result: {[key: string]: any} = await browser.storage.local.get(LEGACY_NETWORK_KEY)
+        return this.asArray<NetworkRequestLog>(result[LEGACY_NETWORK_KEY]) ?? []
+    }
+
+    private static entryKey(id: string): string {
+        return NETWORK_ENTRY_PREFIX + id
+    }
+
+    private static entryKeys(keys: string[]): string[] {
+        return keys.filter((key) => key.startsWith(NETWORK_ENTRY_PREFIX))
+    }
+
+    private static async allKeys(): Promise<string[]> {
+        return browser.storage.local.getKeys?.() ?? Object.keys(await browser.storage.local.get(null))
     }
 
     static async addUserAction(action: Omit<UserAction, "tabInfo">, currentTabInfo: TabInfo, immediate = false): Promise<void> {
@@ -172,22 +257,31 @@ export class StorageManager {
         const entry: NetworkRequestLog = {id: IdUtils.generate(), ...request, tabInfo: currentTabInfo}
         await this.batchWrite('networkRequests', 'network', entry, async (batch) => {
             const configuration = await ExtensionConfigurationManager.getConfiguration()
-            await this.mutateNetworkRequests((networkRequests) => {
-                batch.forEach((item) => networkRequests.unshift(item))
-                return networkRequests.slice(0, configuration.networkRequestsLimit)
-            })
+            await this.mutateNetworkIndex((index) => index.slice(0, configuration.networkRequestsLimit), [...batch].reverse())
         })
     }
 
     static async clearData(): Promise<void> {
         // Drop buffered-but-unflushed appends so an in-flight batch cannot write data back after the wipe.
         Object.values(this.batchers).forEach((batcher) => batcher.items = [])
-        // Route through persist() so a rejected write is reported (notifyUser) instead of becoming an
+        // Route through persist() so a rejected write is reported (onWarning) instead of becoming an
         // unhandled rejection in the CLEAR_DATA handler. Nothing to shed when writing empty data.
-        const wipe = () => this.persist(
-            () => ({storageData: {...DEFAULT_STORAGE}, [NETWORK_REQUESTS_KEY]: []}),
-            () => false
-        )
+        const wipe = async () => {
+            const [keys, index] = await Promise.all([
+                this.allKeys().catch((error) => {
+                    console.warn('QA Trace: could not list storage keys', error)
+                    return []
+                }),
+                this.readIndex().catch(() => undefined)
+            ])
+            const named = (index ?? []).map((entry) => this.entryKey(entry.id))
+            return this.persist(
+                () => ({storageData: {...DEFAULT_STORAGE}, [NETWORK_INDEX_KEY]: []}),
+                () => false,
+                false,
+                () => [...new Set([...this.entryKeys(keys), ...named]), LEGACY_NETWORK_KEY]
+            )
+        }
         await this.enqueueWrite(() => this.enqueueWrite(wipe, 'network'), 'main')
     }
 
@@ -195,38 +289,121 @@ export class StorageManager {
         const cutoff = Date.now() - RETENTION_MS
         const isFresh = (timestamp: number) => timestamp > cutoff
 
+        const network = this.enqueueWrite(
+            () => this.mutateNetworkIndex((index) => index.filter((entry) => isFresh(entry.timestamp))),
+            'network'
+        )
+        await network.catch(() => undefined)
+
         await this.enqueueWrite(async () => {
-            const storage = await this.getStorage()
+            const {storage, legacyRequests} = await this.readBlob()
+            const before = this.itemCount(storage)
             storage.userActions = storage.userActions.filter(action => isFresh(action.timestamp))
             storage.errors = storage.errors.filter(error => isFresh(error.timestamp))
             storage.uiErrorScreenshots = storage.uiErrorScreenshots.filter(item => isFresh(item.timestamp))
-            storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter(p => isFresh(p.timestamp))
+            storage.networkErrorPayloads = storage.networkErrorPayloads.filter(p => isFresh(p.timestamp))
             await SavedResponse.clearSavedLLMResponse(cutoff)
 
-            this.reconcileDependentStorage(storage)
-            await this.setStorage(storage)
+            const reconciled = this.reconcileDependentStorage(storage)
+            if (reconciled || legacyRequests || this.itemCount(storage) < before)
+                await this.setStorage(storage)
         }, 'main')
 
-        await this.enqueueWrite(
-            () => this.mutateNetworkRequests((requests) => requests.filter(request => isFresh(request.timestamp))),
-            'network'
-        )
+        await network
     }
 
-    private static async setNetworkRequests(requests: NetworkRequestLog[]): Promise<void> {
-        let current = requests
-        await this.persist(() => ({[NETWORK_REQUESTS_KEY]: current}), () => {
-            const next = this.halve(current)
+    static sweepNetworkEntries(): Promise<void> {
+        return this.enqueueWrite(async () => {
+            const index = await this.readIndex()
+            if (!index)
+                return
+            const keys = new Set(await this.allKeys())
+            const known = new Set(index.map((entry) => this.entryKey(entry.id)))
+            await this.removeKeys([
+                ...this.entryKeys([...keys]).filter((key) => !known.has(key)),
+                ...(keys.has(LEGACY_NETWORK_KEY) ? [LEGACY_NETWORK_KEY] : [])
+            ])
+            const present = index.filter((entry) => keys.has(this.entryKey(entry.id)))
+            if (present.length < index.length)
+                await this.setNetworkRequests({index: present, set: {}, remove: []}, true)
+        }, 'network')
+    }
+
+    private static async setNetworkRequests(write: NetworkWrite, shrinking = false): Promise<boolean> {
+        let current = write
+        let removedStored = false
+        const fresh = new Set(Object.keys(write.set))
+        const removeStored = async (keys: string[]) => {
+            removedStored ||= this.entryKeys(keys).length > 0
+            await this.removeKeys(keys)
+        }
+        const written = await this.persist(() => ({...current.set, [NETWORK_INDEX_KEY]: current.index}), async (trigger) => {
+            if (trigger.reason === 'quota' && current.remove.length) {
+                const scheduled = current.remove
+                current = {...current, remove: []}
+                await removeStored(scheduled)
+                return true
+            }
+            if (trigger.reason === 'cap' && trigger.excess >= trigger.written)
+                return false
+            const next = this.halve(current.index)
             if (!next)
                 return false
-            current = next
+            const kept = new Set(next.map((entry) => entry.id))
+            const dropped = current.index.filter((entry) => !kept.has(entry.id)).map((entry) => this.entryKey(entry.id))
+            current = {
+                index: next,
+                set: Object.fromEntries(Object.entries(current.set).filter(([, request]) => kept.has(request.id))),
+                remove: current.remove
+            }
+            await removeStored(dropped.filter((key) => !fresh.has(key)))
             return true
-        })
+        }, shrinking, () => current.remove)
+        if (!written && removedStored)
+            await this.persist(
+                () => ({[NETWORK_INDEX_KEY]: current.index.filter((entry) => !(this.entryKey(entry.id) in current.set))}),
+                () => false,
+                true
+            )
+        return written
     }
 
-    // Read-modify-write of the network log; callers already run inside the 'network' queue.
-    private static async mutateNetworkRequests(mutator: (requests: NetworkRequestLog[]) => NetworkRequestLog[]): Promise<void> {
-        await this.setNetworkRequests(mutator(await this.getNetworkRequests()))
+    // Read-modify-write of the index; callers already run inside the 'network' queue.
+    private static async mutateNetworkIndex(keep: (index: NetworkIndexEntry[]) => NetworkIndexEntry[] | null, added: NetworkRequestLog[] = [], shrinking = false): Promise<boolean> {
+        const raw = this.asArray<unknown>(await this.readRawIndex())
+        const stored = raw && this.toIndex(raw)
+        const legacy = stored ? [] : await this.readLegacyRequests()
+        const fresh: StoredRequest[] = [...added, ...legacy]
+            .filter((request) => Number.isFinite(request.timestamp))
+            .map((request) => ({...request, id: request.id || IdUtils.generate()}))
+        const index = keep([...fresh.map((request) => this.toIndexEntry(request)), ...(stored ?? [])])
+        if (!index)
+            return false
+        if (!fresh.length && raw && index.length === raw.length)
+            return true
+        const kept = new Set(index.map((entry) => entry.id))
+        return this.setNetworkRequests({
+            index,
+            set: Object.fromEntries(fresh.filter((request) => kept.has(request.id)).map((request) => [this.entryKey(request.id), request])),
+            remove: [
+                ...(stored ?? []).filter((entry) => !kept.has(entry.id)).map((entry) => this.entryKey(entry.id)),
+                ...(stored ? [] : [LEGACY_NETWORK_KEY])
+            ]
+        }, shrinking)
+    }
+
+    private static toIndexEntry(request: StoredRequest): NetworkIndexEntry {
+        return {id: request.id, timestamp: request.timestamp, bytes: this.measure(request)}
+    }
+
+    private static async removeKeys(keys: string[]): Promise<void> {
+        if (!keys.length)
+            return
+        try {
+            await browser.storage.local.remove(keys)
+        } catch (error) {
+            console.warn('QA Trace: could not remove replaced storage keys', error)
+        }
     }
 
     // Buffers item under key and, once per debounce window, drains the whole batch through one
@@ -267,25 +444,131 @@ export class StorageManager {
         return nextTask
     }
 
-    // Writes are best-effort: on a storage-quota rejection we shed the oldest/heaviest data and
-    // retry until it fits. `shed` returns false when nothing more can be dropped.
-    private static async persist(buildEntries: () => Record<string, unknown>, shed: () => boolean | Promise<boolean>): Promise<void> {
+    // Best-effort: shed and retry while over the cap; once nothing more can be shed, or on a
+    // browser quota rejection, the browser has the final say.
+    private static async persist(buildEntries: () => Record<string, unknown>, shed: (trigger: ShedTrigger) => boolean | Promise<boolean>, shrinking = false, keysToRemove: () => string[] = () => []): Promise<boolean> {
         while (true) {
+            const entries = buildEntries()
+            const written = this.measureWritten(entries)
+            const total = shrinking ? null : await this.totalBytes(written)
+            if (total !== null && total > this.capBytes && await shed({reason: 'cap', excess: total - this.capBytes, written: this.total(written)}))
+                continue
             try {
-                await browser.storage.local.set(buildEntries())
-                return
+                await browser.storage.local.set(entries)
             } catch (error) {
-                if (!this.isQuotaExceeded(error)) {
-                    console.warn('QA Trace: storage write failed', error)
-                    this.notifyUser('storage_write_failed')
-                    return
-                }
-                if (!(await shed())) {
-                    console.warn('QA Trace: storage quota exceeded; oldest data was dropped')
-                    this.notifyUser('storage_quota_dropped')
-                    return
-                }
+                const quota = this.isQuotaExceeded(error)
+                if (quota && await shed({reason: 'quota'}))
+                    continue
+                console.warn(quota ? 'QA Trace: browser storage quota exceeded; latest data was not saved' : 'QA Trace: storage write failed', error)
+                if (!shrinking)
+                    await this.flagWarning(quota ? 'full' : 'failed')
+                return false
             }
+            await Promise.all([
+                this.rememberSizes(written),
+                this.forgetSizes(this.writtenKeys(entries).filter((key) => !(key in written))),
+                this.removeKeys(keysToRemove())
+            ])
+            if (!shrinking)
+                await this.updateWarnings(total)
+            return true
+        }
+    }
+
+    private static measure(value: unknown): number {
+        return value == null ? 0 : byteLength(JSON.stringify(value))
+    }
+
+    private static total(sizes: Partial<StorageSizes>): number {
+        return COUNTED_KEYS.reduce((sum, key) => sum + (sizes[key] ?? 0), 0)
+    }
+
+    private static readonly stores: Record<CountedKey, {key: string, reads: string[], bytes: (values: Record<string, unknown>) => number}> = {
+        storageData: {key: 'storageData', reads: ['storageData'], bytes: (values) => StorageManager.measure(values.storageData)},
+        networkLog: {
+            key: NETWORK_INDEX_KEY,
+            reads: [NETWORK_INDEX_KEY, LEGACY_NETWORK_KEY],
+            bytes: (values) => {
+                const index = StorageManager.toIndex(values[NETWORK_INDEX_KEY])
+                return index ? StorageManager.indexBytes(index) : StorageManager.measure(values[LEGACY_NETWORK_KEY])
+            }
+        }
+    }
+
+    private static indexBytes(index: NetworkIndexEntry[]): number {
+        return index.reduce((sum, entry) => sum + entry.bytes, 0) + this.measure(index)
+    }
+
+    private static writtenKeys(entries: Record<string, unknown>): CountedKey[] {
+        return COUNTED_KEYS.filter((key) => this.stores[key].key in entries)
+    }
+
+    private static measureWritten(entries: Record<string, unknown>): Partial<StorageSizes> {
+        const written: Partial<StorageSizes> = {}
+        try {
+            for (const key of this.writtenKeys(entries))
+                written[key] = this.stores[key].bytes(entries)
+            return written
+        } catch (error) {
+            console.warn('QA Trace: could not measure storage write', error)
+            return {}
+        }
+    }
+
+    private static async totalBytes(written: Partial<StorageSizes>): Promise<number | null> {
+        try {
+            const cached = await this.cachedSizes(COUNTED_KEYS.filter((key) => !(key in written)))
+            return this.total({...cached, ...written})
+        } catch (error) {
+            console.warn('QA Trace: could not measure storage, skipping cap check', error)
+            return null
+        }
+    }
+
+    private static async cachedSizes(keys: CountedKey[]): Promise<StorageSizes> {
+        const sizes: StorageSizes = {storageData: 0, networkLog: 0}
+        if (!keys.length)
+            return sizes
+        const cached = await this.readSizes(keys)
+        const uncached: CountedKey[] = []
+        for (const key of keys)
+            if (Number.isFinite(cached[key]))
+                sizes[key] = cached[key] as number
+            else
+                uncached.push(key)
+        if (!uncached.length)
+            return sizes
+        const local: {[key: string]: any} = await browser.storage.local.get(uncached.flatMap((key) => this.stores[key].reads))
+        uncached.forEach((key) => sizes[key] = this.stores[key].bytes(local))
+        return sizes
+    }
+
+    private static async readSizes(keys: CountedKey[]): Promise<Partial<Record<CountedKey, unknown>>> {
+        try {
+            const result: {[key: string]: any} = await browser.storage.session.get(keys.map((key) => STORAGE_SIZE_KEY_PREFIX + key))
+            return Object.fromEntries(keys.map((key) => [key, result[STORAGE_SIZE_KEY_PREFIX + key]]))
+        } catch {
+            return {}
+        }
+    }
+
+    private static async rememberSizes(sizes: Partial<StorageSizes>): Promise<void> {
+        try {
+            await browser.storage.session.set(Object.fromEntries(
+                Object.entries(sizes).map(([key, bytes]) => [STORAGE_SIZE_KEY_PREFIX + key, bytes])
+            ))
+        } catch (error) {
+            console.debug('QA Trace: could not cache storage sizes', error)
+        }
+    }
+
+    private static async forgetSizes(keys: CountedKey[]): Promise<void> {
+        if (!keys.length)
+            return
+        try {
+            await browser.storage.session.remove(keys.map((key) => STORAGE_SIZE_KEY_PREFIX + key))
+        } catch (error) {
+            console.debug('QA Trace: could not clear cached storage sizes', error)
         }
     }
 
@@ -305,22 +588,45 @@ export class StorageManager {
             : null
     }
 
-    private static notifyUser(messageKey: string): void {
+    static flaggedWarnings(): Promise<Set<StorageWarning>> {
+        return this.warned ??= browser.storage.session.get(STORAGE_WARNED_KEY)
+            .then((result) => new Set(this.asArray<StorageWarning>(result[STORAGE_WARNED_KEY]) ?? []))
+            .catch(() => new Set())
+    }
+
+    private static async saveWarned(warned: Set<StorageWarning>): Promise<void> {
         try {
-            void browser.notifications?.create({
-                type: 'basic',
-                iconUrl: browser.runtime.getURL('icons/128.png'),
-                title: browser.i18n.getMessage('extName'),
-                message: browser.i18n.getMessage(messageKey)
-            })
+            await browser.storage.session.set({[STORAGE_WARNED_KEY]: [...warned]})
         } catch (error) {
-            console.warn('QA Trace: failed to show notification', error)
+            console.debug('QA Trace: could not save storage warning state', error)
         }
     }
 
-    // Round-robins the shed ladder one rung per retry (in value order) instead of draining each store
-    // before the next, so the separate network log isn't wiped before the blob's own oversized content
-    // is trimmed. Returns false once a full pass sheds nothing.
+    private static async flagWarning(warning: StorageWarning): Promise<void> {
+        const warned = await this.flaggedWarnings()
+        if (warned.has(warning))
+            return
+        warned.add(warning)
+        await this.saveWarned(warned)
+        this.onWarning?.(warning)
+    }
+
+    private static async unflagWarnings(...warnings: StorageWarning[]): Promise<void> {
+        const warned = await this.flaggedWarnings()
+        if (warnings.filter((warning) => warned.delete(warning)).length)
+            await this.saveWarned(warned)
+    }
+
+    private static async updateWarnings(total: number | null): Promise<void> {
+        await this.unflagWarnings('failed')
+        if (total === null)
+            return
+        if (usagePercentOf(total, this.capBytes) >= STORAGE_WARNING_PERCENT)
+            await this.flagWarning('high')
+        else
+            await this.unflagWarnings('high', 'full')
+    }
+
     private static makeBlobShedder(data: StorageData): () => Promise<boolean> {
         const rungs: Array<() => boolean | Promise<boolean>> = [
             () => this.dropOldestScreenshot(data),
@@ -360,42 +666,40 @@ export class StorageManager {
 
     private static shedNetworkRequests(): Promise<boolean> {
         return this.enqueueWrite(async () => {
-            const next = this.halve(await this.getNetworkRequests())
-            if (!next)
+            try {
+                return await this.mutateNetworkIndex((index) => this.halve(index), [], true)
+            } catch (error) {
+                console.warn('QA Trace: could not shed network requests', error)
                 return false
-            await this.setNetworkRequests(next)
-            return true
+            }
         }, 'network')
     }
 
-    private static reconcileDependentStorage(storage: StorageData): void {
-        const errorIds = new Set(
-            storage.errors
-                .map((error) => error.id)
-                .filter((id): id is string => typeof id === 'string' && id.length > 0)
-        )
+    private static reconcileDependentStorage(storage: StorageData): boolean {
+        let changed = false
+        const ids = (values: Array<string | undefined>) =>
+            new Set(values.filter((id): id is string => typeof id === 'string' && id.length > 0))
+        const prune = <T>(items: T[] | undefined, keep: (item: T) => boolean): T[] => {
+            const kept = (items || []).filter(keep)
+            changed ||= kept.length !== (items || []).length
+            return kept
+        }
+        const unlink = (field: 'screenshotId' | 'networkPayloadId', known: Set<string>) =>
+            storage.errors.forEach((error) => {
+                const id = error[field]
+                if (id && !known.has(id)) {
+                    delete error[field]
+                    changed = true
+                }
+            })
 
-        storage.uiErrorScreenshots = (storage.uiErrorScreenshots || []).filter((shot) => errorIds.has(shot.errorId))
+        const errorIds = ids(storage.errors.map((error) => error.id))
+        storage.uiErrorScreenshots = prune(storage.uiErrorScreenshots, (shot) => errorIds.has(shot.errorId))
+        unlink('screenshotId', ids(storage.uiErrorScreenshots.map((shot) => shot.id)))
 
-        const screenshotIds = new Set(storage.uiErrorScreenshots.map((shot) => shot.id))
-        storage.errors.forEach((error) => {
-            if (error.screenshotId && !screenshotIds.has(error.screenshotId))
-                delete error.screenshotId
-        })
-
-        const payloadIdsFromErrors = new Set(
-            storage.errors
-                .map((error) => error.networkPayloadId)
-                .filter((id): id is string => typeof id === 'string' && id.length > 0)
-        )
-        storage.networkErrorPayloads = (storage.networkErrorPayloads || []).filter((payload) =>
-            payloadIdsFromErrors.has(payload.id)
-        )
-
-        const payloadIds = new Set(storage.networkErrorPayloads.map((payload) => payload.id))
-        storage.errors.forEach((error) => {
-            if (error.networkPayloadId && !payloadIds.has(error.networkPayloadId))
-                delete error.networkPayloadId
-        })
+        const payloadIds = ids(storage.errors.map((error) => error.networkPayloadId))
+        storage.networkErrorPayloads = prune(storage.networkErrorPayloads, (payload) => payloadIds.has(payload.id))
+        unlink('networkPayloadId', ids(storage.networkErrorPayloads.map((payload) => payload.id)))
+        return changed
     }
 }

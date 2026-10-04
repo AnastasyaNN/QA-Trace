@@ -322,6 +322,28 @@ export class PopupRenderer {
         return fragment
     }
 
+    static buildStorageBreakdown(rows: Array<{label: string, size: string, hint?: string}>): DocumentFragment {
+        const fragment = document.createDocumentFragment()
+        rows.forEach(({label, size, hint}) => {
+            const row = document.createElement('div')
+            row.className = 'storage-breakdown-row'
+            const name = document.createElement('div')
+            name.textContent = label
+            if (hint) {
+                const note = document.createElement('small')
+                note.className = 'storage-breakdown-hint'
+                note.textContent = hint
+                name.appendChild(note)
+            }
+            const value = document.createElement('span')
+            value.className = 'storage-breakdown-size'
+            value.textContent = size
+            row.append(name, value)
+            fragment.appendChild(row)
+        })
+        return fragment
+    }
+
     private static iconButton(className: string, title: string, icon: IconName, data: Record<string, string>): HTMLButtonElement {
         const button = document.createElement('button')
         button.type = 'button'

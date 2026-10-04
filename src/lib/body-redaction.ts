@@ -27,11 +27,7 @@ const BEARER_REGEX = /\bBearer\s+[A-Za-z0-9._\-]+/gi
 
 export const MAX_RESPONSE_CHARS = 12_000
 export const MAX_BODY_REDACT_CHARS = 100_000
-// Hard ceiling (in bytes) on a stored response body, independent of the truncation setting: a body
-// over this is dropped for a size marker so an oversized response can never overflow the ~10 MB
-// storage.local quota and lose the whole request row. Kept just under the quota to leave room for
-// the rest.
-export const MAX_STORED_RESPONSE_BYTES = 9_000_000
+export const MAX_TEXT_FIELD_LENGTH = 5_000
 
 export class BodyRedaction {
     static isSensitiveKey(name: string): boolean {

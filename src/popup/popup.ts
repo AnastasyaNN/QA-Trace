@@ -1,5 +1,6 @@
 import * as browser from "webextension-polyfill";
 import {StorageManager} from "../lib/storage";
+import {STORAGE_NOTICE_PERCENT, STORAGE_WARNING_PERCENT, formatBytes} from "../lib/storage-limits";
 import {ExtensionConfigurationManager} from "../lib/integrations";
 import {ScreenshotUtils} from "../lib/screenshots";
 import {ErrorPromptUtils} from "../lib/error-prompt";
@@ -46,9 +47,9 @@ class PopupManager {
 
     private async loadData(): Promise<void> {
         try {
-            await StorageManager.cleanupOldData()
+            await browser.runtime.sendMessage({type: 'CLEANUP_OLD_DATA'})
         } catch (error) {
-            PopupDOM.showConfigureError(browser.i18n.getMessage('popup_failed_to_cleanup_old_data'))
+            console.warn('QA Trace: cleanup failed', error)
         }
 
         const storageData = await StorageManager.getStorage()
@@ -70,6 +71,21 @@ class PopupManager {
         PopupDOM.getHtmlElement('getPrompt')?.addEventListener('click', async () => {
             this.popupContext.actionFilter = ''
             await this.showConfigureView()
+        })
+
+        const statsGrid = PopupDOM.getHtmlElement('statsGrid')
+        const cardOf = (event: Event) => (event.target as HTMLElement).closest<HTMLElement>('.stat-card')
+        statsGrid?.addEventListener('click', (event) => {
+            const section = cardOf(event)?.dataset.section
+            if (section)
+                document.getElementById(section)?.scrollIntoView({block: 'start'})
+        })
+        statsGrid?.addEventListener('keydown', (event) => {
+            const card = cardOf(event)
+            if (card && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault()
+                card.click()
+            }
         })
 
         this.delegateClicks('errorsList', [
@@ -135,6 +151,20 @@ class PopupManager {
 
         if (errorsCount)
             errorsCount.textContent = this.popupContext.storageData.errors.length.toString()
+
+        const usage = StorageManager.storageUsage(this.popupContext.storageData)
+        if (usage) {
+            const storageCard = PopupDOM.getHtmlElement('storageStatCard')
+            storageCard?.classList.toggle('storage-notice', usage.percent >= STORAGE_NOTICE_PERCENT && usage.percent < STORAGE_WARNING_PERCENT)
+            storageCard?.classList.toggle('storage-high', usage.percent >= STORAGE_WARNING_PERCENT)
+            PopupDOM.getHtmlElement('storageUsedPercent')?.replaceChildren(`${usage.percent}%`)
+            PopupDOM.getHtmlElement('storageUsedBytes')?.replaceChildren(formatBytes(usage.bytes))
+            PopupDOM.getHtmlElement('storageBreakdown')?.replaceChildren(PopupRenderer.buildStorageBreakdown([
+                {label: browser.i18n.getMessage('popup_user_actions'), size: formatBytes(usage.userActions)},
+                {label: browser.i18n.getMessage('popup_errors'), size: formatBytes(usage.errors), hint: browser.i18n.getMessage('popup_storage_errors_hint')},
+                {label: browser.i18n.getMessage('popup_network_requests'), size: formatBytes(usage.requests)}
+            ]))
+        }
 
         const actionsList = PopupDOM.getHtmlElement('actionsList')
         if (actionsList) {

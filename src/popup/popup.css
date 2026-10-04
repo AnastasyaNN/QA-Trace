@@ -28,6 +28,7 @@
     --status-dot-inactive: #cbd5e0;
     --warning-bg: #fef5e7;
     --warning-border: #fed7aa;
+    --warning: #d97706;
     --danger: #e53e3e;
     --danger-dark: #c53030;
     --danger-bg: #fed7d7;
@@ -146,13 +147,13 @@ header h1 {
 
 .stats {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 12px;
     margin-bottom: 16px;
 }
 
 .stats.stats-with-network {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
 }
 
 .stat-card {
@@ -161,8 +162,21 @@ header h1 {
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     text-align: center;
+    cursor: pointer;
+    transition: box-shadow 0.2s, transform 0.2s;
     -moz-border-radius: 8px;
     -moz-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.stat-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+    -moz-box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+}
+
+.stat-card:focus-visible {
+    outline: 2px solid var(--qa-cyan);
+    outline-offset: 2px;
 }
 
 .stat-card h3 {
@@ -180,6 +194,12 @@ header h1 {
     color: var(--text-primary);
 }
 
+.stat-card small {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
 .stat-card-user-actions {
     border: 1px solid var(--success-border);
 }
@@ -192,8 +212,47 @@ header h1 {
     border: 1px solid var(--warning-border);
 }
 
+.stat-card-storage {
+    border: 1px solid var(--border-default);
+}
+
+.stat-card-storage.storage-notice {
+    border-color: var(--warning-border);
+}
+
+.stat-card-storage.storage-notice span {
+    color: var(--warning);
+}
+
+.stat-card-storage.storage-high {
+    border-color: var(--danger-border);
+}
+
+.stat-card-storage.storage-high span {
+    color: var(--danger);
+}
+
+.storage-breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+}
+
+.storage-breakdown-hint {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.storage-breakdown-size {
+    font-weight: 600;
+}
+
 .recent-actions,
-.recent-errors {
+.recent-errors,
+.storage-breakdown {
     background: var(--surface-white);
     border-radius: 10px;
     padding: 20px;
@@ -205,7 +264,8 @@ header h1 {
 }
 
 .recent-actions h3,
-.recent-errors h3 {
+.recent-errors h3,
+.storage-breakdown h3 {
     font-size: 16px;
     margin-bottom: 12px;
     color: var(--text-primary);
@@ -549,6 +609,7 @@ header h1 {
     overflow-y: auto;
     overflow-x: hidden;
     padding: 2px 4px;
+    scroll-behavior: smooth;
     scrollbar-width: thin;
     scrollbar-color: var(--border-soft) var(--surface-muted);
     -moz-overflow-scrolling: touch;
@@ -1168,6 +1229,7 @@ header h1 {
 
 @media (prefers-reduced-motion: reduce) {
     .btn,
+    .stat-card,
     .radio-option,
     .input-field,
     .checkbox-input,
@@ -1177,7 +1239,12 @@ header h1 {
     }
 
     .btn-primary:hover,
-    .btn-secondary:hover {
+    .btn-secondary:hover,
+    .stat-card:hover {
         transform: none;
+    }
+
+    .view-scroll {
+        scroll-behavior: auto;
     }
 }

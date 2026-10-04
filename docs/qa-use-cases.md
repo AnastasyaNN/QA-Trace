@@ -36,7 +36,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 - Enable **Track all fetch/XHR requests** for a specific allowed origin to record every `fetch`/`XHR` call, not just failures. (Browser-issued resource loads - document, scripts, stylesheets, images, fonts - are not captured.)
 - Captures method, URL, status, request/response headers, and bodies - with the same sensitive-data redaction used for network errors.
 - Stored separately from errors, with a configurable limit (default 150 most recent requests).
-- The popup shows the most recent requests below Recent Errors; copy any single request as JSON, or **Download all** stored requests as a `.txt` file for attaching to tickets.
+- The popup shows the most recent requests under **Latest Network Requests** (below Latest Errors); copy any single request as JSON, open it in a detail view, or **Download all** stored requests as a `.txt` file for attaching to tickets.
 
 ### 4) Smart Scope Controls Before Generation
 - Choose mode:
@@ -44,7 +44,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
   - **Document Steps**
   - **Full Report of Actions**
 - Select all tabs or only selected tracked tabs.
-- Limit by actions count (steps/document modes) or time window (full mode).
+- Pick the action to start from (steps/document modes) or a time window (full mode).
 - Mark expected errors to exclude from ticket prompts.
 - Add custom "unexpected behavior" even when technical errors were not captured.
 
@@ -52,7 +52,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 - Generate prompt and copy manually.
 - Send prompt directly to configured LLM (if LLM integration is enabled).
 - Trigger external webhook pipeline (if webhook integration is enabled).
-- Response is normalized into JSON shape with `summary` and `description` (for LLM and webhook integrations).
+- The LLM response is normalized into a JSON shape with `summary` and `description`; for webhooks the popup shows the delivery result.
 
 ## Practical QA Use Cases
 
@@ -63,7 +63,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 1. Reproduce issue in allowed URL scope.
 2. Open extension popup -> **Get Prompt**.
 3. Select **Steps to Reproduce for Ticket**.
-4. Keep relevant tab scope, actions count, and uncheck expected errors.
+4. Keep the relevant tab scope, pick the action to start from, and tick the errors you consider expected.
 5. Generate and send to LLM (or copy prompt manually).
 
 **Value:** Reduces manual rewrite; produces concise summary + structured reproduction steps.
@@ -132,7 +132,7 @@ It tracks actions and errors in chronological context and lets QA choose the sco
 **How to use:**
 1. Enable **Track all fetch/XHR requests** for the origin under test in Configuration.
 2. Reproduce the flow.
-3. Open the popup, review the recent requests below Recent Errors, and copy a specific one as JSON - or **Download all** to attach the full traffic log to the ticket.
+3. Open the popup, review the latest requests under **Latest Network Requests**, and copy a specific one as JSON or open it in the detail view - or **Download all** to attach the full traffic log to the ticket.
 
 **Value:** Gives developers the real request/response context (with sensitive data redacted) instead of a vague "the data looked wrong."
 

@@ -1,6 +1,6 @@
 # QA Trace - Privacy Policy
 
-**Last updated:** September 22, 2026
+**Last updated:** October 1, 2026
 
 QA Trace is a browser extension that helps QA engineers capture user actions and runtime errors during exploratory testing sessions and convert them into structured reports. This policy explains what data the extension collects, how it is stored, and under what circumstances it may be transmitted externally.
 
@@ -10,11 +10,11 @@ QA Trace is a browser extension that helps QA engineers capture user actions and
 
 When tracking is active on an allowed origin, QA Trace collects:
 
-- **User actions** - event type (click, input, select, change, tab open/reload), element selector, optional input value, timestamp, tab URL, and tab title.
+- **User actions** - event type (click, double-click, input, change, tab open/reload), element selector, optional input value, timestamp, tab URL, and tab title.
 - **Console errors** - error message, stack trace, and timestamp.
 - **Network errors** - HTTP method, URL, status code, request/response headers and body, and timestamp.
 - **Network requests** - when **Track all fetch/XHR requests** is enabled for an origin, the same fields (method, URL, status, request/response headers and body, timestamp) are recorded for successful `fetch`/`XMLHttpRequest` calls as well, not only failures.
-- **UI error screenshots** - a base64-encoded PNG image of the visible tab area captured when a UI error is detected.
+- **UI error screenshots** - a base64-encoded JPEG image of the visible tab area captured when a UI error is detected (converted to PNG only when you copy it to the clipboard).
 
 QA Trace does **not** collect data on pages outside your configured Allowed URLs list. Password input values are never captured.
 
@@ -31,7 +31,7 @@ QA Trace applies automatic redaction before storing data:
 - All collected data is stored in `browser.storage.local` on your device.
 - **URLs are stored with their origin intact** by default; the origin (protocol and host) is removed only before data leaves the browser (see Section 4).
 - Stored data **automatically expires after 12 hours**.
-- Storage is subject to configurable limits (actions, errors, network requests, screenshots, network payloads).
+- Storage is subject to configurable limits (actions, errors, network requests, text length) and fixed internal limits (the 5 most recent UI-error screenshots and network-error payloads). Total tracked data is capped at 9.5 MB; when the cap or the browser quota is reached, the oldest data is removed automatically and the tracked page shows a warning.
 - You can clear all stored data at any time from the extension popup.
 
 ## 4. External data transmission
@@ -45,7 +45,7 @@ QA Trace does **not** transmit any data externally by default. External transmis
 
 **LLM integration** (OpenAI, DeepSeek, or a custom OpenAI-compatible endpoint): sends the generated prompt and system instructions to the configured API endpoint. The response is used to generate a structured report.
 
-**Webhook integration:** sends the generated prompt, collected actions and errors, language setting, and timestamp to your configured webhook URL.
+**Webhook integration:** sends the generated prompt and system instructions, collected actions and errors, language setting, and timestamp to your configured webhook URL.
 
 **Origin redaction:** by default the URL origin (protocol and host) is stripped before transmission - from tab and action URLs, error messages, stacks, headers, and bodies - so only path, query, and hash information leaves the browser. This can be toggled in Configuration.
 
@@ -65,7 +65,6 @@ QA Trace requests the following browser permissions:
 - **webNavigation** - to detect page navigation events.
 - **alarms** - to schedule automatic data cleanup.
 - **clipboardWrite** - to copy prompts and screenshots to your clipboard.
-- **notifications** - to warn you when tracked data could not be saved, or the oldest data was removed, because browser storage is full.
 
 ## 7. Children's privacy
 

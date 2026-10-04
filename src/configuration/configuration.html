@@ -230,7 +230,7 @@
                       id="stepsDocumentationExample"></textarea>
         </div>
 
-        <h2 data-i18n-key="config_limits">Limits configuration</h2>
+        <h2 data-i18n-key="config_limits">Limits</h2>
 
         <div class="form-group">
             <label class="label"
@@ -259,10 +259,10 @@
         <div class="form-group">
             <label class="label"
                    for="textLengthLimit"
-                   data-i18n-key="config_text_length_limit">Text Length Limit</label>
+                   data-i18n-key="config_text_length_limit">Text Length</label>
             <input class="input" type="number"
                    id="textLengthLimit" placeholder="500" min="1" step="50">
-            <p class="description" data-i18n-key="config_text_length_limit_desc">Maximum characters stored for values, labels and error messages.</p>
+            <p class="description" data-i18n-key="config_text_length_limit_desc">Maximum characters stored for action values and labels.</p>
         </div>
 
         <div class="form-group">
@@ -270,7 +270,7 @@
                 <input class="checkbox-input" type="checkbox" id="redactUrlQueryParams" checked>
                 <label class="checkbox-label" for="redactUrlQueryParams" data-i18n-key="config_redact_url_query">Strip query strings from stored URLs</label>
             </div>
-            <p class="description" data-i18n-key="config_redact_url_query_desc">When enabled, tab URLs, open/reload actions, and network error request URLs are stored without the ?query. Hash route paths (#/page) are kept, but any query or credentials inside the fragment are removed. Reduces risk of saving session tokens in telemetry.</p>
+            <p class="description" data-i18n-key="config_redact_url_query_desc">When enabled, tab URLs, open/reload actions, and all captured fetch/XHR request URLs (errors and the full request log) are stored without the query. Hash route paths are kept, but query and credentials inside the fragment are removed.</p>
         </div>
 
         <div class="form-group">
@@ -278,7 +278,7 @@
                 <input class="checkbox-input" type="checkbox" id="redactUrlOrigin" checked>
                 <label class="checkbox-label" for="redactUrlOrigin" data-i18n-key="config_redact_url_origin">Strip origin (protocol and host) from prompts</label>
             </div>
-            <p class="description" data-i18n-key="config_redact_url_origin_desc">When enabled, the protocol and host are removed from tab and action URLs in generated prompts (e.g. /dashboard instead of https://example.com/dashboard).</p>
+            <p class="description" data-i18n-key="config_redact_url_origin_desc">When enabled, the protocol and host are removed from URLs, error messages, stacks, headers and bodies in generated prompts and webhook payloads (e.g. /dashboard instead of https://example.com/dashboard). The local copy keeps full URLs.</p>
         </div>
 
         <div class="form-group" id="disableBodyTruncationGroup">
